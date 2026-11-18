@@ -140,6 +140,19 @@ export class ThreadRunEndedError extends Schema.TaggedError<ThreadRunEndedError>
   }
 }
 
+/** Exit code 3 tells an editor its copy is stale; stdout still carries the current draft. */
+export class ThreadDraftStaleError extends Schema.TaggedError<ThreadDraftStaleError>()(
+  "ThreadDraftStaleError",
+  { threadId: ThreadId, revision: Schema.Number },
+) {
+  override readonly [Runtime.errorReported] = false;
+  override readonly [Runtime.errorExitCode] = 3;
+
+  override get message(): string {
+    return `The draft of thread ${this.threadId} changed (now revision ${this.revision}). Nothing was saved.`;
+  }
+}
+
 const ThreadCliError = Schema.Union([
   ThreadServerNotRunningError,
   ThreadServerUnreachableError,
@@ -149,6 +162,7 @@ const ThreadCliError = Schema.Union([
   ThreadProjectNotFoundError,
   ThreadNeedsInputError,
   ThreadRunEndedError,
+  ThreadDraftStaleError,
 ]);
 const isThreadCliError = Schema.is(ThreadCliError);
 
@@ -1108,6 +1122,97 @@ const threadShowCommand = Command.make("show", {
   ),
 );
 
+const ThreadDraftResult = Schema.Struct({
+  threadId: ThreadId,
+  prompt: Schema.String,
+  revision: Schema.Number,
+  updatedAt: Schema.NullOr(Schema.String),
+});
+const ThreadDraftSetResult = Schema.Struct({
+  ...ThreadDraftResult.fields,
+  accepted: Schema.Boolean,
+});
+
+const printDraft = (draft: typeof ThreadDraftResult.Type) =>
+  printJson({
+    threadId: draft.threadId,
+    prompt: draft.prompt,
+    revision: draft.revision,
+    updatedAt: draft.updatedAt,
+  });
+
+const threadDraftGetCommand = Command.make("get", {
+  ...projectLocationFlags,
+  thread: threadArgument,
+  json: jsonFlag,
+}).pipe(
+  Command.withDescription("Print a thread's unsent composer prompt."),
+  Command.withHandler((flags) =>
+    Effect.gen(function* () {
+      const threadId = yield* decodeThreadId(flags.thread);
+      yield* withThreadTools(
+        flags,
+        Effect.fn("cli.thread.draft.get")(function* (tools) {
+          const draft = yield* tools.call("t3_thread_draft_get", { threadId }, ThreadDraftResult);
+          yield* flags.json ? printDraft(draft) : Console.log(draft.prompt);
+        }),
+      );
+    }).pipe(reportThreadErrors),
+  ),
+);
+
+const threadDraftSetCommand = Command.make("set", {
+  ...projectLocationFlags,
+  thread: threadArgument,
+  prompt: Argument.String("prompt").pipe(
+    Argument.withDescription("The new prompt, or - to read it from stdin. Empty clears it."),
+  ),
+  baseRevision: Flag.Int("base-revision").pipe(
+    Flag.withDescription(
+      "Save only if the draft is still at this revision. Otherwise print it and exit 3.",
+    ),
+    Flag.optional,
+  ),
+  json: jsonFlag,
+}).pipe(
+  Command.withDescription("Replace a thread's unsent composer prompt in every open client."),
+  Command.withHandler((flags) =>
+    Effect.gen(function* () {
+      const threadId = yield* decodeThreadId(flags.thread);
+      const prompt =
+        flags.prompt === "-"
+          ? yield* Stdio.Stdio.pipe(
+              Effect.flatMap((stdio) => stdio.stdin.pipe(Stream.decodeText(), Stream.mkString)),
+            )
+          : flags.prompt;
+      const baseRevision = Option.getOrUndefined(flags.baseRevision);
+      if (baseRevision !== undefined && baseRevision < 0) {
+        return yield* new ThreadUsageError({ detail: "--base-revision must be 0 or more." });
+      }
+      yield* withThreadTools(
+        flags,
+        Effect.fn("cli.thread.draft.set")(function* (tools) {
+          const result = yield* tools.call(
+            "t3_thread_draft_set",
+            { threadId, prompt, ...(baseRevision === undefined ? {} : { baseRevision }) },
+            ThreadDraftSetResult,
+          );
+          if (flags.json) yield* printDraft(result);
+          if (!result.accepted) {
+            return yield* new ThreadDraftStaleError({ threadId, revision: result.revision });
+          }
+          if (!flags.json) yield* Console.log("Saved.");
+        }),
+      );
+    }).pipe(reportThreadErrors),
+  ),
+);
+
+const threadDraftCommand = Command.make("draft").pipe(
+  Command.withDescription("Read or replace a thread's unsent composer prompt."),
+  Command.withSubcommands([threadDraftGetCommand, threadDraftSetCommand]),
+);
+
 export const threadCommand = Command.make("thread").pipe(
   Command.withDescription("Start, message, and read threads on the running server."),
   Command.withSubcommands([
@@ -1115,5 +1220,6 @@ export const threadCommand = Command.make("thread").pipe(
     threadStartCommand,
     threadSendCommand,
     threadShowCommand,
+    threadDraftCommand,
   ]),
 );

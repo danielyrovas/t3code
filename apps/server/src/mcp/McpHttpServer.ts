@@ -71,6 +71,8 @@ import * as Feedback from "../feedback/FeedbackService.ts";
 import { EnvironmentToolkit } from "./toolkits/environment/tools.ts";
 import * as EnvironmentHandlers from "./toolkits/environment/handlers.ts";
 import { ThemeToolkit } from "./toolkits/theme/tools.ts";
+import { ThreadDraftToolkit } from "./toolkits/draft/tools.ts";
+import * as ThreadDraftHandlers from "./toolkits/draft/handlers.ts";
 import * as ThemeHandlers from "./toolkits/theme/handlers.ts";
 import { ProjectToolkit } from "./toolkits/project/tools.ts";
 import * as ProjectHandlers from "./toolkits/project/handlers.ts";
@@ -1452,6 +1454,8 @@ export const layerOrchestratorToolkit = toolkitRegistration(
 export const layerThreadToolkit = toolkitRegistration(ThreadToolkit, ThreadHandlers.layer);
 const layerWorkflowToolkit = toolkitRegistration(WorkflowToolkit, WorkflowHandlers.layer);
 
+const layerThreadDraftToolkit = toolkitRegistration(ThreadDraftToolkit, ThreadDraftHandlers.layer);
+
 export const layerMessageToolkit = toolkitRegistration(MessageToolkit, MessageHandlers.layer);
 
 const layerWorktreeToolkitRegistration = toolkitRegistration(
@@ -1548,6 +1552,7 @@ export const layerTools = Layer.mergeAll(
   layerOrchestratorToolkit,
   layerThreadToolkit,
   layerWorkflowToolkit,
+  layerThreadDraftToolkit,
   layerAttachmentToolkit,
   layerProjectRegistration,
   layerFeedbackToolkit,

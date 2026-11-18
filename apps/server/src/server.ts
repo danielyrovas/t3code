@@ -110,6 +110,7 @@ import * as PreviewAutomationBroker from "./mcp/PreviewAutomationBroker.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";
 import * as PreviewManager from "./preview/Manager.ts";
+import * as ComposerPrompts from "./composer/ComposerPrompts.ts";
 import * as PortScanner from "./preview/PortScanner.ts";
 import * as PreviewTunnel from "./preview/PreviewTunnel.ts";
 import * as ServerBrowser from "./preview/ServerBrowser.ts";
@@ -556,6 +557,7 @@ const layerTerminal = TerminalManager.layer(
 const layerPreview = Layer.empty.pipe(
   Layer.provideMerge(PreviewTunnel.layer),
   Layer.provideMerge(PreviewManager.layer),
+  Layer.provideMerge(ComposerPrompts.layer),
   Layer.provideMerge(layerPortScanner),
 );
 
