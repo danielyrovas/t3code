@@ -163,6 +163,7 @@ import { hostEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { cn } from "../lib/utils";
 import { resolveRemoteOpenState, useRemoteOpenResolution } from "../remoteOpen";
 import { useRightPanelStore } from "../rightPanelStore";
+import { openInThreadNeovim } from "../lib/neovimOpen";
 import { useOpenIssueLink } from "../lib/openIssueLink";
 import { issueTrackerEnvironment } from "../state/issueTrackers";
 import { useEnvironmentQuery } from "../state/query";
@@ -891,12 +892,25 @@ function useChatMarkdownState({
     }
     return findAgentDirectoryMatch(workspaceRelativePath, agentRoots, searchRoot);
   };
-  const openFileInPanel = (fileLinkMeta: MarkdownFileLinkMeta, panelPath: string) => {
+  const openFileInPanel = (
+    fileLinkMeta: MarkdownFileLinkMeta,
+    panelPath: string,
+    viewer: "default" | "files" = "default",
+  ) => {
     if (!threadRef) return;
     // Every open supersedes pending lookups, including synchronous opens.
     const isLatestLookup = claimWorkspaceBasenameLookup();
-    const openAt = (path: string) =>
+    const openAt = (path: string) => {
+      const target = cwd
+        ? {
+            path: resolveWorkspaceFilePath(path, cwd),
+            line: fileLinkMeta.line,
+            column: fileLinkMeta.column,
+          }
+        : null;
+      if (viewer === "default" && target && openInThreadNeovim(threadRef, target)) return;
       useRightPanelStore.getState().openFile(threadRef, path, fileLinkMeta.line);
+    };
     if (
       fileLinkMeta.workspaceLookupPath === null ||
       !cwd ||
@@ -985,6 +999,7 @@ function useChatMarkdownState({
           markdownFileCopyPaths(fileLinkMeta, await resolveHostPath(), cwd)
         }
         onOpenInPanel={(path) => openFileInPanel(fileLinkMeta, path)}
+        onOpenInFiles={(path) => openFileInPanel(fileLinkMeta, path, "files")}
         onOpenMedia={
           threadRef && canPreviewMedia
             ? () => openMarkdownMedia(mediaPath, fileLinkMeta.filePath)

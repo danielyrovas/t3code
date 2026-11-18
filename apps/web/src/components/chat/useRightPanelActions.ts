@@ -18,9 +18,15 @@ import { useDiffPanelStore } from "../../diffPanelStore";
 import { type ThreadPanelPresentation } from "../../rightPanelLayout";
 import {
   selectThreadPanelOpen,
+  selectThreadRightPanelState,
   type RightPanelSurface,
   useRightPanelStore,
 } from "../../rightPanelStore";
+import { requestResizableWidth } from "../../hooks/useResizableWidth";
+import { threadRightPanelWidthStorageKey } from "../../hooks/usePreviewPanelInlineSize";
+import { isNeovimSurface, NEOVIM_TERMINAL_COMMAND } from "../../lib/neovimTerminal";
+import { useNeovimFileOpener } from "../../lib/neovimOpen";
+import { useThreadTerminalActions } from "../terminal/useThreadTerminalActions";
 import { requestWorkspaceContentFocus, requestWorkspaceFocus } from "../../lib/workspaceFocus";
 import { setActivePreviewTab } from "../../previewStateStore";
 import { isBrowserSettingsReadError } from "../../browser/openFileInPreview";
@@ -97,6 +103,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
   } = input;
 
   const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
+  const terminalActions = useThreadTerminalActions(activeThreadRef);
   const onToggleDiff = () => {
     if (!isServerThread) {
       return;
@@ -228,6 +235,54 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     focusActivePanelTerminal(activeThreadRef);
   };
   const toggleRightPanelStable = useStableCallback(toggleRightPanel);
+  /** Neovim shares the window with the chat, so it opens the panel at half the window's width. */
+  const requestHalfWidthPanel = (threadRef: ScopedThreadRef) => {
+    requestResizableWidth(
+      threadRightPanelWidthStorageKey(scopedThreadKey(threadRef)),
+      Math.round(window.innerWidth / 2),
+    );
+  };
+  const addNeovimSurface = (): string | null => {
+    if (!activeThreadRef) return null;
+    const threadRef = activeThreadRef;
+    const launched = terminalActions.launchTerminal({
+      command: NEOVIM_TERMINAL_COMMAND,
+      place: (terminalId) => {
+        requestHalfWidthPanel(threadRef);
+        useRightPanelStore.getState().openTerminal(threadRef, terminalId, "neovim");
+      },
+    });
+    if (!launched) return null;
+    focusTerminal(threadRef, launched.terminalId);
+    void launched.result;
+    return launched.terminalId;
+  };
+  const addNeovimSurfaceStable = useStableCallback(() => void addNeovimSurface());
+  /** Shows the thread's Neovim and launches one when there is none; returns its terminal id. */
+  const showNeovimSurface = (): string | null => {
+    if (!activeThreadRef) return null;
+    const store = useRightPanelStore.getState();
+    const panel = selectThreadRightPanelState(store.byThreadKey, activeThreadRef);
+    const neovim = panel.surfaces.find(isNeovimSurface);
+    if (!neovim) return addNeovimSurface();
+    if (!panel.isOpen) requestHalfWidthPanel(activeThreadRef);
+    store.activateSurface(activeThreadRef, neovim.id);
+    focusTerminal(activeThreadRef, neovim.activeTerminalId);
+    return neovim.resourceId;
+  };
+  /** Hiding the panel keeps the nvim session running; showing it again reattaches. */
+  const toggleNeovim = (): boolean => {
+    if (!activeThreadRef) return false;
+    const store = useRightPanelStore.getState();
+    const panel = selectThreadRightPanelState(store.byThreadKey, activeThreadRef);
+    const neovim = panel.surfaces.find(isNeovimSurface);
+    if (neovim && panel.isOpen && panel.activeSurfaceId === neovim.id) {
+      closePreviewPanel();
+      return true;
+    }
+    return showNeovimSurface() !== null;
+  };
+  useNeovimFileOpener(activeThreadRef, showNeovimSurface);
   const toggleThreadPanel = () => {
     if (!activeThreadRef) return;
     const store = useRightPanelStore.getState();
@@ -323,6 +378,10 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
       if (!event.repeat) closeRightPanelSurface(activeRightPanelSurface);
     },
     "diff.toggle": () => onToggleDiff(),
+    "neovim.toggle": ({ event }) => {
+      if (event.repeat) return;
+      return toggleNeovim();
+    },
   } satisfies ChatShortcutCommands;
 
   return {
@@ -330,6 +389,7 @@ export function useRightPanelActions(input: RightPanelActionsInput) {
     activateRightPanelSurfaceStable,
     addDeviceSurfaceStable,
     addDiffSurfaceStable,
+    addNeovimSurfaceStable,
     addFilesSurfaceStable,
     addPullRequestSurfaceStable,
     addPullRequestsSurfaceStable,

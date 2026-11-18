@@ -185,6 +185,15 @@ seconds after the latest action. Right after an action, the shortcut works even
 in a text field such as the composer. Once you type or press another key, the
 field gets its own undo back. Terminals always keep their native shortcut.
 
+`neovim.toggle` (`mod+alt+v` by default) opens Neovim in the right panel at half the
+window's width. Neovim runs through `fish -l` as `nvim --listen $T3_NVIM_SOCKET`, so it
+needs `fish` and `nvim` on your login shell's `PATH`. While Neovim is available, a click on a
+file link in chat or a diff opens the file in this Neovim (it starts one when there is none);
+the link's context menu keeps **Open in file viewer**. When Neovim is the active tab, the shortcut hides the panel and
+Neovim keeps running. When another tab is active, it switches to Neovim. The shortcut has no
+`when` condition, so it also works while Neovim has focus. You can also open Neovim from the
+right panel's **Open a surface** menu with `N`. Quitting Neovim closes its tab.
+
 `navigation.back` (`mod+[` by default) and `navigation.forward` (`mod+]`) move
 through the pages you have visited, like a browser's back and forward buttons.
 

@@ -3,6 +3,7 @@ import {
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
+  type TerminalLaunchCommand,
   type ThreadId,
 } from "@t3tools/contracts";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
@@ -13,6 +14,7 @@ import { memo, useEffect } from "react";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useStableCallback } from "../hooks/useStableCallback";
 import type { TerminalContextSelection } from "../lib/terminalContext";
+import { terminalSurfaceLaunchCommand } from "../lib/neovimTerminal";
 import { focusActiveDrawerTerminal, focusTerminal } from "../lib/terminalFocus";
 import { cn } from "~/lib/utils";
 import {
@@ -72,6 +74,7 @@ interface TerminalLaunchLocationWithEnv {
   readonly cwd: string;
   readonly worktreePath: string | null;
   readonly runtimeEnv: Record<string, string>;
+  readonly command?: TerminalLaunchCommand;
 }
 
 interface PersistentThreadTerminalDrawerProps {
@@ -362,7 +365,9 @@ export const PersistentThreadTerminalPanel = memo(function PersistentThreadTermi
       summary,
       threadWorktreePath,
     });
+    const command = terminalSurfaceLaunchCommand(surface, terminalId);
     terminalLaunchLocationsById.set(terminalId, {
+      ...(command ? { command } : {}),
       cwd:
         launchContext?.cwd ??
         summary?.cwd ??

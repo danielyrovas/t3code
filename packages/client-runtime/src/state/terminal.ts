@@ -349,6 +349,7 @@ export function createTerminalSession(
           cols: input.cols,
           rows: input.rows,
           ...(input.env ? { env: input.env } : {}),
+          ...(input.command ? { command: input.command } : {}),
         },
       });
       return result._tag === "Success";

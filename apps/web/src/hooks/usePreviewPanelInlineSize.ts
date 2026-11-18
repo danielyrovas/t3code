@@ -17,6 +17,11 @@ const PREVIEW_PANEL_MAX_WIDTH_FRACTION = 0.7;
 const SIBLING_COLUMN_MIN_WIDTH = 360;
 const PREVIEW_PANEL_DEFAULT_WIDTH = 540;
 
+/** Where a thread's right panel remembers its width. */
+export function threadRightPanelWidthStorageKey(threadKey: string): string {
+  return `${PREVIEW_PANEL_WIDTH_STORAGE_KEY}:${threadKey}`;
+}
+
 export function usePreviewPanelInlineSize(
   options: {
     readonly enabled?: boolean | undefined;

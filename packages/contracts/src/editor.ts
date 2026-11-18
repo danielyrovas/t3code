@@ -145,6 +145,8 @@ export const EDITORS = [
     launchStyle: "line-column",
     jetbrainsProductCode: "WS",
   },
+  // Opens in the thread's embedded Neovim surface, never as a new process.
+  { id: "neovim", label: "Neovim", commands: ["nvim"], launchStyle: "direct-path" },
   { id: "file-manager", label: "File Manager", commands: null, launchStyle: "direct-path" },
 ] as const satisfies ReadonlyArray<EditorDefinition>;
 
@@ -168,6 +170,10 @@ export const LaunchEditorInput = Schema.Struct({
   projectRoot: Schema.optional(TrimmedNonEmptyString),
   /** Only for file-manager; requires the server's shellRevealInFileManager capability. */
   reveal: Schema.optional(Schema.Boolean),
+  /** Only for neovim: the thread terminal that runs it. Without it the server picks one. */
+  terminal: Schema.optional(
+    Schema.Struct({ threadId: TrimmedNonEmptyString, terminalId: TrimmedNonEmptyString }),
+  ),
 });
 export type LaunchEditorInput = typeof LaunchEditorInput.Type;
 

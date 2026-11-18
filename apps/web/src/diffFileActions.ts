@@ -3,8 +3,11 @@ import {
   isAbsolutePath,
   isWindowsAbsolutePath,
   normalizeProjectPathForComparison,
+  resolveWorkspaceFilePath,
   workspaceRelativeFilePath,
 } from "@t3tools/shared/path";
+
+import { openInThreadNeovim } from "./lib/neovimOpen";
 
 import { useRightPanelStore } from "./rightPanelStore";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
@@ -111,6 +114,14 @@ export function openDiffFilePrimaryAction({
   if (!workspaceFilePath) return;
 
   if (threadRef) {
+    if (
+      activeCwd &&
+      openInThreadNeovim(threadRef, {
+        path: resolveWorkspaceFilePath(workspaceFilePath, activeCwd),
+      })
+    ) {
+      return;
+    }
     useRightPanelStore.getState().openFile(threadRef, workspaceFilePath);
     return;
   }

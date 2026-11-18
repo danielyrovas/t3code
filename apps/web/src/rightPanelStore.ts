@@ -28,6 +28,8 @@ const RIGHT_PANEL_KINDS = [
 ] as const;
 export type RightPanelKind = (typeof RIGHT_PANEL_KINDS)[number];
 
+export type TerminalSurfaceLaunch = "neovim";
+
 export type PullRequestDetailTab = "summary" | "guide" | "timeline" | "code";
 
 export interface DeviceTabTarget {
@@ -48,6 +50,8 @@ export type RightPanelSurface =
       terminalIds: string[];
       activeTerminalId: string;
       splitDirection?: "horizontal" | "vertical";
+      /** Its first terminal runs this program instead of the user's shell. */
+      launch?: TerminalSurfaceLaunch;
     }
   | { id: "diff"; kind: "diff" }
   | {
@@ -192,7 +196,7 @@ interface RightPanelStoreState {
   ) => void;
   /** Clears the surface's pending link only while it is still `revealUrl`. */
   settlePullRequestReveal: (ref: ScopedThreadRef, surfaceId: string, revealUrl: string) => void;
-  openTerminal: (ref: ScopedThreadRef, terminalId: string) => void;
+  openTerminal: (ref: ScopedThreadRef, terminalId: string, launch?: TerminalSurfaceLaunch) => void;
   splitTerminal: (
     ref: ScopedThreadRef,
     surfaceId: string,
@@ -287,12 +291,16 @@ const attachmentSurface = (attachment: ChatFileAttachment): RightPanelSurface =>
   attachment,
 });
 
-const terminalSurface = (terminalId: string): RightPanelSurface => ({
+const terminalSurface = (
+  terminalId: string,
+  launch?: TerminalSurfaceLaunch,
+): RightPanelSurface => ({
   id: `terminal:${terminalId}`,
   kind: "terminal",
   resourceId: terminalId,
   terminalIds: [terminalId],
   activeTerminalId: terminalId,
+  ...(launch ? { launch } : {}),
 });
 
 export type PullRequestSurface = Extract<RightPanelSurface, { kind: "pull-request" }>;
@@ -651,9 +659,11 @@ export function migratePersistedRightPanelState(persistedState: unknown): {
                       terminalIds.includes(surface.activeTerminalId)
                         ? surface.activeTerminalId
                         : (terminalIds[0] ?? surface.resourceId);
+                    const { launch, ...terminal } = surface;
                     return [
                       {
-                        ...surface,
+                        ...terminal,
+                        ...(launch === "neovim" ? { launch } : {}),
                         terminalIds: terminalIds.length > 0 ? terminalIds : [surface.resourceId],
                         activeTerminalId,
                       },
@@ -986,10 +996,10 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             );
           }),
         ),
-      openTerminal: (ref, terminalId) =>
+      openTerminal: (ref, terminalId, launch) =>
         set((state) =>
           userAction(state, scopedThreadKey(ref), (current) =>
-            upsertSurface(current, terminalSurface(terminalId)),
+            upsertSurface(current, terminalSurface(terminalId, launch)),
           ),
         ),
       splitTerminal: (ref, surfaceId, terminalId, direction = "horizontal") =>

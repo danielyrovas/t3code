@@ -44,6 +44,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CodeXml,
   FileDiff,
   Files,
   Globe2,
@@ -144,6 +145,8 @@ export interface RightPanelTabsProps {
   /** Keep separate from the DOM click handler so a MouseEvent cannot become a profile id. */
   onAddBrowserInProfile: (profileId: string) => void;
   onAddTerminal: () => void;
+  /** Absent where Neovim is not offered. */
+  onAddNeovim?: (() => void) | undefined;
   onAddDiff: () => void;
   onAddFiles: () => void;
   onAddPullRequest: () => void;
@@ -153,6 +156,7 @@ export interface RightPanelTabsProps {
   onAddSideChat?: (() => void) | undefined;
   browserAvailable: boolean;
   terminalAvailable: boolean;
+  neovimAvailable?: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
@@ -182,6 +186,7 @@ function shouldOpenDefaultBrowserProfileFromMenuClick(pointerType: string | unde
 const SURFACE_DISABLED_REASONS = {
   browser: msg("Browser previews are only available in the T3 Code desktop app."),
   terminal: msg("Terminal surfaces are only available from a project thread."),
+  neovim: msg("Terminal surfaces are only available from a project thread."),
   files: msg("Files are only available when a project is open."),
   diff: msg("Diff is only available for server threads in Git repositories."),
   pullRequest: msg("This thread's branch has no pull request yet."),
@@ -207,6 +212,7 @@ const LAUNCHER_SHORTCUT_BLOCKING_LAYERS = [
 const SURFACE_UNAVAILABLE_HINTS = {
   browser: msg("Only available in the desktop app."),
   terminal: msg("Available when a project is open."),
+  neovim: msg("Available when a project is open."),
   files: msg("Available when a project is open."),
   diff: msg("Available for Git repositories."),
   pullRequest: msg("No pull request on this branch yet."),
@@ -328,6 +334,8 @@ function RightPanelEmptyState(props: {
   onAddBrowserInProfile: (profileId: string) => void;
   browserProfiles: ReadonlyArray<{ readonly id: string; readonly name: string }>;
   onAddTerminal: () => void;
+  /** Absent where Neovim is not offered. */
+  onAddNeovim?: (() => void) | undefined;
   onAddDiff: () => void;
   onAddFiles: () => void;
   onAddPullRequest: () => void;
@@ -337,6 +345,7 @@ function RightPanelEmptyState(props: {
   onAddSideChat?: (() => void) | undefined;
   browserAvailable: boolean;
   terminalAvailable: boolean;
+  neovimAvailable?: boolean;
   diffAvailable: boolean;
   filesAvailable: boolean;
   pullRequestAvailable: boolean;
@@ -366,6 +375,18 @@ function RightPanelEmptyState(props: {
       disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.terminal),
       onClick: props.onAddTerminal,
     },
+    ...(props.onAddNeovim
+      ? [
+          {
+            label: msg("Neovim"),
+            icon: CodeXml,
+            shortcut: "N",
+            available: props.neovimAvailable === true,
+            disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.neovim),
+            onClick: props.onAddNeovim,
+          },
+        ]
+      : []),
     {
       label: msg("Files"),
       icon: Files,
@@ -599,6 +620,7 @@ function surfaceTitle(
         Math.max(surface.relativePath.lastIndexOf("/"), surface.relativePath.lastIndexOf("\\")) + 1,
       );
     case "terminal":
+      if (surface.launch === "neovim") return resolve(msg("Neovim"));
       return (
         terminalLabelsById.get(surface.activeTerminalId) ??
         getTerminalLabel(surface.activeTerminalId, resolve)
@@ -691,7 +713,11 @@ function SurfaceIcon({
         />
       );
     case "terminal":
-      return <TerminalSquare className="size-3 shrink-0" />;
+      return surface.launch === "neovim" ? (
+        <CodeXml className="size-3 shrink-0" />
+      ) : (
+        <TerminalSquare className="size-3 shrink-0" />
+      );
     case "pull-request":
       return (
         <PullRequestSurfaceIcon
@@ -1185,6 +1211,18 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
       disabledReason: messages(SURFACE_DISABLED_REASONS.terminal),
       onClick: props.onAddTerminal,
     },
+    ...(props.onAddNeovim
+      ? [
+          {
+            label: msg("Neovim"),
+            icon: CodeXml,
+            shortcut: "N",
+            available: props.neovimAvailable === true,
+            disabledReason: messages(SURFACE_DISABLED_REASONS.neovim),
+            onClick: props.onAddNeovim,
+          },
+        ]
+      : []),
     {
       label: msg("Files"),
       icon: Files,
@@ -1637,6 +1675,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddBrowserInProfile={props.onAddBrowserInProfile}
             browserProfiles={browserProfiles}
             onAddTerminal={props.onAddTerminal}
+            onAddNeovim={props.onAddNeovim}
             onAddDiff={props.onAddDiff}
             onAddFiles={props.onAddFiles}
             onAddPullRequest={props.onAddPullRequest}
@@ -1645,6 +1684,7 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
             onAddSideChat={props.onAddSideChat}
             browserAvailable={props.browserAvailable}
             terminalAvailable={props.terminalAvailable}
+            neovimAvailable={props.neovimAvailable === true}
             diffAvailable={props.diffAvailable}
             filesAvailable={props.filesAvailable}
             pullRequestAvailable={props.pullRequestAvailable}

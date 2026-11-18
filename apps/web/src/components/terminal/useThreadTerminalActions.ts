@@ -2,6 +2,7 @@ import {
   AuthTerminalOperateScope,
   AuthTerminalReadScope,
   type ScopedThreadRef,
+  type TerminalLaunchCommand,
 } from "@t3tools/contracts";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
@@ -90,6 +91,8 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
     readonly location?: TerminalLaunchLocation | null;
     readonly extraEnv?: Record<string, string>;
     readonly stopOnSettle?: boolean;
+    /** Runs instead of the user's shell. */
+    readonly command?: TerminalLaunchCommand;
     readonly size?: { readonly cols: number; readonly rows: number };
   }) => {
     if (!threadRef || !canWrite() || !project) return null;
@@ -111,6 +114,7 @@ export function useThreadTerminalActions(threadRef: ScopedThreadRef | null) {
         }),
         ...input.size,
         ...(input.stopOnSettle !== undefined ? { stopOnSettle: input.stopOnSettle } : {}),
+        ...(input.command ? { command: input.command } : {}),
       },
     });
     return { terminalId, result };

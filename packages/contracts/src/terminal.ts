@@ -158,6 +158,13 @@ const TerminalSessionInput = Schema.Struct({
 });
 export type TerminalSessionInput = Schema.Codec.Encoded<typeof TerminalSessionInput>;
 
+/** A program the PTY runs in place of the user's shell. */
+export const TerminalLaunchCommand = Schema.Struct({
+  file: TrimmedNonEmptyStringSchema.check(Schema.isMaxLength(1_024)),
+  args: Schema.Array(Schema.String.check(Schema.isMaxLength(8_192))).check(Schema.isMaxLength(64)),
+});
+export type TerminalLaunchCommand = typeof TerminalLaunchCommand.Type;
+
 export const TerminalOpenInput = Schema.Struct({
   ...TerminalSessionInput.fields,
   cwd: TrimmedNonEmptyStringSchema,
@@ -167,6 +174,8 @@ export const TerminalOpenInput = Schema.Struct({
   env: Schema.optional(TerminalEnvSchema),
   providerInstanceId: Schema.optional(ProviderInstanceId),
   stopOnSettle: Schema.optional(Schema.Boolean),
+  // The session keeps it, so restarts run the same program; older servers ignore it.
+  command: Schema.optional(TerminalLaunchCommand),
 });
 export type TerminalOpenInput = typeof TerminalOpenInput.Type;
 
@@ -179,6 +188,8 @@ export const TerminalAttachInput = Schema.Struct({
   env: Schema.optional(TerminalEnvSchema),
   providerInstanceId: Schema.optional(ProviderInstanceId),
   stopOnSettle: Schema.optional(Schema.Boolean),
+  // Used only when the attach opens the session, e.g. after a server restart.
+  command: Schema.optional(TerminalLaunchCommand),
   restartIfNotRunning: Schema.optional(Schema.Boolean),
   // Resubscriptions preserve stopped terminals; unknown IDs recover after a server restart.
   resume: Schema.optional(Schema.Boolean),

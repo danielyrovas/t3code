@@ -5,6 +5,7 @@ import {
   chunkTerminalWrite,
   DEFAULT_TERMINAL_ID,
   TERMINAL_WRITE_MAX_LENGTH,
+  TerminalAttachInput,
   TerminalError,
   TerminalOpenInput,
   TerminalProviderEnvironmentError,
@@ -49,6 +50,29 @@ describe("TerminalOpenInput", () => {
       env: { "bad-key": "1", GOOD_KEY: "2" },
     });
     expect(parsed.env).toEqual({ GOOD_KEY: "2" });
+  });
+
+  it("accepts a launch command and rejects an empty program", () => {
+    const base = { threadId: "thread-1", terminalId: DEFAULT_TERMINAL_ID, cwd: "/tmp/project" };
+    const parsed = decodeSync(TerminalOpenInput, {
+      ...base,
+      command: { file: "fish", args: ["-l", "-c", "exec nvim"] },
+    });
+    expect(parsed.command).toEqual({ file: "fish", args: ["-l", "-c", "exec nvim"] });
+    expect(() =>
+      decodeSync(TerminalOpenInput, { ...base, command: { file: " ", args: [] } }),
+    ).toThrow();
+  });
+});
+
+describe("TerminalAttachInput", () => {
+  it("carries an optional launch command", () => {
+    const parsed = decodeSync(TerminalAttachInput, {
+      threadId: "thread-1",
+      terminalId: DEFAULT_TERMINAL_ID,
+      command: { file: "nvim", args: [] },
+    });
+    expect(parsed.command).toEqual({ file: "nvim", args: [] });
   });
 });
 

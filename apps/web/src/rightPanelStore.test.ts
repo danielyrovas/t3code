@@ -517,6 +517,46 @@ describe("rightPanelStore", () => {
     expect(selectThreadRightPanelState(migrated.byThreadKey, refA).maximized).toBe(true);
   });
 
+  it("keeps a Neovim terminal surface through persistence and drops unknown launches", () => {
+    useRightPanelStore.getState().openTerminal(refA, "term-2", "neovim");
+    const opened = selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, refA);
+    expect(opened.surfaces).toEqual([
+      {
+        id: "terminal:term-2",
+        kind: "terminal",
+        resourceId: "term-2",
+        terminalIds: ["term-2"],
+        activeTerminalId: "term-2",
+        launch: "neovim",
+      },
+    ]);
+    const migrated = migratePersistedRightPanelState(
+      JSON.parse(
+        JSON.stringify({
+          byThreadKey: {
+            "env-1:thread-A": {
+              ...opened,
+              surfaces: [
+                ...opened.surfaces,
+                {
+                  id: "terminal:term-3",
+                  kind: "terminal",
+                  resourceId: "term-3",
+                  terminalIds: ["term-3"],
+                  activeTerminalId: "term-3",
+                  launch: "emacs",
+                },
+              ],
+            },
+          },
+        }),
+      ),
+    );
+    const surfaces = selectThreadRightPanelState(migrated.byThreadKey, refA).surfaces;
+    expect(surfaces[0]).toMatchObject({ id: "terminal:term-2", launch: "neovim" });
+    expect(surfaces[1]).not.toHaveProperty("launch");
+  });
+
   it("drops the legacy singleton terminal surface during migration", () => {
     expect(
       migratePersistedRightPanelState({

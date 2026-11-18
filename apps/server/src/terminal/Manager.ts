@@ -26,6 +26,7 @@ import {
   type TerminalClearInput,
   type TerminalCloseInput,
   type TerminalEvent,
+  type TerminalLaunchCommand,
   type TerminalMetadataStreamEvent,
   type TerminalOpenInput,
   type TerminalObserveInput,
@@ -79,6 +80,11 @@ import * as ProcessRunner from "../processRunner.ts";
 import * as PortScanner from "../preview/PortScanner.ts";
 import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClient.ts";
 import { terminalOutputStream } from "./OutputProtocol.ts";
+import {
+  defaultNeovimSocketDir,
+  terminalIntegrationEnv,
+  type TerminalIntegrationOptions,
+} from "./neovim.ts";
 import * as PtyAdapter from "@t3tools/shared/PtyAdapter";
 
 export {
@@ -323,6 +329,8 @@ interface TerminalSessionState {
   hasRunningSubprocess: boolean;
   childCommandLabel: string | null;
   runtimeEnv: Record<string, string> | null;
+  /** Runs in place of the resolved shell on every start, including restarts. */
+  launchCommand: TerminalLaunchCommand | null;
   stopOnSettle: boolean;
   startupError: string | null;
 }
@@ -1664,6 +1672,8 @@ function normalizedRuntimeEnv(
 
 interface TerminalManagerOptions {
   logsDir: string;
+  /** Adds the `T3_*` variables and the Neovim socket to each terminal's env. */
+  terminalIntegration?: TerminalIntegrationOptions;
   historyLineLimit?: number;
   historyByteLimit?: number;
   ptyAdapter: PtyAdapter.PtyAdapter["Service"];
@@ -1763,6 +1773,10 @@ export const make = Effect.fn("TerminalManager.make")(function* (
   );
   return yield* makeWithOptions({
     logsDir: terminalLogsDir,
+    terminalIntegration: {
+      baseDir,
+      socketDir: defaultNeovimSocketDir(yield* HostProcess.Platform),
+    },
     ptyAdapter,
     processTable: nativeTelemetry.processTable.pipe(
       Effect.mapError(
@@ -2857,12 +2871,14 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       increment(terminalSessionsTotal, { lifecycle: eventType }).pipe(
         Effect.andThen(
           Effect.gen(function* () {
-            const shellCandidates = yield* resolveShellCandidates(
-              shellResolver,
-              platform,
-              baseEnv,
-              session.runtimeEnv?.T3CODE_TERMINAL_SHELL ?? baseEnv.T3CODE_TERMINAL_SHELL,
-            ).pipe(Effect.provideService(FileSystem.FileSystem, fileSystem));
+            const shellCandidates: ReadonlyArray<ShellCandidate> = session.launchCommand
+              ? [{ shell: session.launchCommand.file, args: [...session.launchCommand.args] }]
+              : yield* resolveShellCandidates(
+                  shellResolver,
+                  platform,
+                  baseEnv,
+                  session.runtimeEnv?.T3CODE_TERMINAL_SHELL ?? baseEnv.T3CODE_TERMINAL_SHELL,
+                ).pipe(Effect.provideService(FileSystem.FileSystem, fileSystem));
             const terminalEnv = createTerminalSpawnEnv(
               baseEnv,
               session.runtimeEnv,
@@ -2901,6 +2917,21 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
                   terminalEnv[pathKey] = merged;
                 }
               }
+            }
+            delete terminalEnv.T3_NVIM_SOCKET;
+            if (options.terminalIntegration) {
+              const integration = options.terminalIntegration;
+              Object.assign(
+                terminalEnv,
+                yield* Effect.promise(() =>
+                  terminalIntegrationEnv(integration, {
+                    threadId: session.threadId,
+                    terminalId: session.terminalId,
+                    projectRoot: session.worktreePath ?? session.cwd,
+                    launchesProgram: session.launchCommand !== null,
+                  }),
+                ),
+              );
             }
             const spawnResult = yield* trySpawn(shellCandidates, terminalEnv, session);
             ptyProcess = spawnResult.process;
@@ -3303,6 +3334,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         hasRunningSubprocess: false,
         childCommandLabel: null,
         runtimeEnv: normalizedRuntimeEnv(input.env),
+        launchCommand: input.command ?? null,
         stopOnSettle: input.stopOnSettle ?? false,
         startupError: null,
       };
@@ -3338,14 +3370,19 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
     const runtimeEnvChanged = !Equal.equals(currentRuntimeEnv, nextRuntimeEnv);
     const nextWorktreePath =
       input.worktreePath !== undefined ? (input.worktreePath ?? null) : liveSession.worktreePath;
+    // An open without a command keeps the session's program.
+    const nextLaunchCommand =
+      input.command !== undefined ? input.command : liveSession.launchCommand;
     const launchContextChanged =
       liveSession.cwd !== input.cwd ||
       runtimeEnvChanged ||
-      liveSession.worktreePath !== nextWorktreePath;
+      liveSession.worktreePath !== nextWorktreePath ||
+      !Equal.equals(liveSession.launchCommand, nextLaunchCommand);
 
     if (launchContextChanged) {
       yield* stopProcess(liveSession);
       liveSession.cwd = input.cwd;
+      liveSession.launchCommand = nextLaunchCommand;
       liveSession.worktreePath = nextWorktreePath;
       liveSession.runtimeEnv = nextRuntimeEnv;
       liveSession.history.clear();

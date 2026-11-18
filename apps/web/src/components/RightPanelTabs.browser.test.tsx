@@ -288,3 +288,52 @@ describe("device tab rename", () => {
     expect(onRenameDevice).toHaveBeenCalledExactlyOnceWith(DEVICE_SURFACE.id, "日本語");
   });
 });
+
+const NEOVIM_SURFACE: RightPanelSurface = {
+  id: "terminal:term-2",
+  kind: "terminal",
+  resourceId: "term-2",
+  terminalIds: ["term-2"],
+  activeTerminalId: "term-2",
+  launch: "neovim",
+};
+
+describe("Neovim surface", () => {
+  it("opens from the empty launcher with N", async () => {
+    const onAddNeovim = vi.fn();
+    const props = panel(DIFF_SURFACE).props as RightPanelTabsProps;
+    await using screen = await render(
+      <RightPanelTabs
+        {...props}
+        surfaces={[]}
+        activeSurfaceId={null}
+        onAddNeovim={onAddNeovim}
+        neovimAvailable
+      >
+        {null}
+      </RightPanelTabs>,
+    );
+    expect(
+      screen.container
+        .querySelector("[data-surface-launcher-keys]")
+        ?.getAttribute("data-surface-launcher-keys"),
+    ).toContain("N");
+    await userEvent.keyboard("n");
+    expect(onAddNeovim).toHaveBeenCalledOnce();
+  });
+
+  it("names its tab Neovim", async () => {
+    const props = panel(DIFF_SURFACE).props as RightPanelTabsProps;
+    await using screen = await render(
+      <RightPanelTabs
+        {...props}
+        surfaces={[NEOVIM_SURFACE]}
+        activeSurfaceId={NEOVIM_SURFACE.id}
+        terminalLabelsById={new Map([["term-2", "nvim"]])}
+      >
+        {null}
+      </RightPanelTabs>,
+    );
+    await expect.element(screen.getByRole("button", { name: "Neovim", exact: true })).toBeVisible();
+  });
+});

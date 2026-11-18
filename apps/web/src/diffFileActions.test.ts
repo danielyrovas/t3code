@@ -3,6 +3,7 @@ import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { openDiffFilePrimaryAction, resolveDiffPathForWorkspace } from "./diffFileActions";
+import { registerNeovimOpenHandler } from "./lib/neovimOpen";
 import { selectThreadRightPanelState, useRightPanelStore } from "./rightPanelStore";
 
 const THREAD_REF = scopeThreadRef(
@@ -33,6 +34,26 @@ describe("openDiffFilePrimaryAction", () => {
       activeSurfaceId: "file:Dockerfile",
     });
     expect(openInEditor).not.toHaveBeenCalled();
+  });
+
+  it("opens the absolute path in the thread's Neovim while one takes file opens", () => {
+    const openInNeovim = vi.fn(() => true);
+    const unregister = registerNeovimOpenHandler(THREAD_REF, openInNeovim);
+    try {
+      openDiffFilePrimaryAction({
+        threadRef: THREAD_REF,
+        filePath: "frontend/Dockerfile",
+        activeCwd: "/repo/frontend",
+        repositoryRoot: "/repo",
+        openInEditor: vi.fn(),
+      });
+    } finally {
+      unregister();
+    }
+    expect(openInNeovim).toHaveBeenCalledExactlyOnceWith({ path: "/repo/frontend/Dockerfile" });
+    expect(
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF).isOpen,
+    ).toBe(false);
   });
 
   it("preserves repository-relative paths in a separate worktree", () => {

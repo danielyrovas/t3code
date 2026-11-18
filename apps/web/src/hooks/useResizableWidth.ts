@@ -1,5 +1,10 @@
 import * as Schema from "effect/Schema";
-import { type PointerEvent as ReactPointerEvent, useLayoutEffect, useState } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useLayoutEffect,
+  useState,
+} from "react";
 
 import { getLocalStorageItem, setLocalStorageItem } from "./useLocalStorage";
 import { useResizeDrag } from "./useResizeDrag";
@@ -9,6 +14,21 @@ const WidthSchema = Schema.Finite;
 
 /** The host must size itself from this custom property. */
 export const RESIZABLE_WIDTH_PROPERTY = "--resizable-width";
+
+const widthListeners = new Map<string, Set<(width: number) => void>>();
+
+/**
+ * Stores a width for `storageKey` as if the user dragged to it. A mounted panel clamps it to
+ * its bounds at once; an unmounted one reads it when it mounts.
+ */
+export function requestResizableWidth(storageKey: string, width: number): void {
+  try {
+    setLocalStorageItem(storageKey, width, WidthSchema);
+  } catch (error) {
+    console.error("Could not persist panel width.", error);
+  }
+  for (const listener of widthListeners.get(storageKey) ?? []) listener(width);
+}
 
 export interface UseResizableWidthOptions {
   readonly storageKey: string;
@@ -54,6 +74,22 @@ export function useResizableWidth(options: UseResizableWidthOptions): {
   if (widthState.storageKey !== storageKey) {
     setWidthState({ storageKey, width: readWidth() });
   }
+
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to width requests for this storage key from outside the panel
+  useEffect(() => {
+    // The render clamps it to the bounds of the moment.
+    const listener = (width: number) => setWidthState({ storageKey, width });
+    let listeners = widthListeners.get(storageKey);
+    if (!listeners) {
+      listeners = new Set();
+      widthListeners.set(storageKey, listeners);
+    }
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) widthListeners.delete(storageKey);
+    };
+  }, [storageKey]);
 
   const clampedWidth = clamp(widthState.width ?? defaultWidth);
   const restoreWidth = useStableCallback((host: HTMLElement | null) => {

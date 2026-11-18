@@ -3,9 +3,12 @@ import {
   type ContextMenuItem,
   type EditorId,
   type EnvironmentId,
+  type ScopedThreadRef,
 } from "@t3tools/contracts";
 
 import { resolveDiffPathForWorkspace } from "./diffFileActions";
+import { canOpenInThreadNeovim, openInThreadNeovim } from "./lib/neovimOpen";
+import { useRightPanelStore } from "./rightPanelStore";
 import {
   revealInFileExplorerLabelForKind,
   revealInFileExplorerLabelForOs,
@@ -24,6 +27,8 @@ import type { MessageResolver } from "./i18n/messages";
 export type FileContextMenuAction =
   | "reveal-in-folder"
   | "open"
+  /** The Files surface, while file clicks open Neovim. */
+  | "open-in-files"
   /** Submenu parent; never the activated id. */
   | "open-with"
   | `editor:${EditorId}`;
@@ -34,6 +39,8 @@ export interface FileContextMenuTarget {
   readonly filePath: string;
   readonly workspaceRoot: string | undefined;
   readonly repositoryRoot?: string | undefined;
+  /** Offers the Files surface of this thread while Neovim takes file clicks. */
+  readonly threadRef?: ScopedThreadRef | null | undefined;
 }
 
 export function resolveFileContextMenuAbsolutePath(target: FileContextMenuTarget): string | null {
@@ -63,9 +70,13 @@ function buildFileContextMenuItems(input: {
   readonly hasAbsolutePath: boolean;
   readonly capabilities: FileContextMenuCapabilities;
   readonly resolve: MessageResolver;
+  readonly canOpenInFiles?: boolean;
 }): readonly ContextMenuItem<FileContextMenuAction>[] {
   if (!input.hasAbsolutePath) return [];
   const items: ContextMenuItem<FileContextMenuAction>[] = [];
+  if (input.canOpenInFiles) {
+    items.push({ id: "open-in-files", label: input.resolve(msg("Open in file viewer")) });
+  }
   if (input.capabilities.canOpenDefault) {
     items.push({
       id: "open",
@@ -120,6 +131,17 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
   ): Promise<void> => {
     const absolutePath = resolveFileContextMenuAbsolutePath(target);
     if (absolutePath === null || environmentId === null) return;
+    if (action === "open-in-files") {
+      const workspaceFilePath = resolveDiffPathForWorkspace({
+        filePath: target.filePath,
+        workspaceRoot: target.workspaceRoot,
+        repositoryRoot: target.repositoryRoot,
+      });
+      if (target.threadRef && workspaceFilePath) {
+        useRightPanelStore.getState().openFile(target.threadRef, workspaceFilePath);
+      }
+      return;
+    }
 
     const reveal = action === "reveal-in-folder";
     const editor =
@@ -127,6 +149,13 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
         ? ("file-manager" as const)
         : (action.slice("editor:".length) as EditorId);
     if (action !== "open" && !reveal && !capabilities.editorIds.includes(editor)) return;
+    if (
+      editor === "neovim" &&
+      target.threadRef &&
+      openInThreadNeovim(target.threadRef, { path: absolutePath })
+    ) {
+      return;
+    }
 
     const result = await openInEditor({
       environmentId,
@@ -158,6 +187,7 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
       hasAbsolutePath: resolveFileContextMenuAbsolutePath(target) !== null,
       capabilities,
       resolve,
+      canOpenInFiles: canOpenInThreadNeovim(target.threadRef),
     });
     if (items.length === 0 || api === undefined) return;
     const clicked = await api.contextMenu.show(items, position);
@@ -171,6 +201,7 @@ export function useFileContextMenu(environmentId: EnvironmentId | null) {
         hasAbsolutePath: resolveFileContextMenuAbsolutePath(target) !== null,
         capabilities,
         resolve,
+        canOpenInFiles: canOpenInThreadNeovim(target.threadRef),
       }),
     capabilities,
     activate,

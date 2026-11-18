@@ -43,6 +43,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { expect, vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
+import { neovimSocketPath, type TerminalIntegrationOptions } from "./neovim.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -239,6 +240,7 @@ const historyLogPath = (logsDir: string, threadId = "thread-1") =>
   );
 
 interface CreateManagerOptions {
+  terminalIntegration?: (baseDir: string) => TerminalIntegrationOptions;
   shellResolver?: () => string;
   env?: NodeJS.ProcessEnv;
   subprocessInspector?: (terminalPid: number) => Effect.Effect<{
@@ -316,6 +318,9 @@ const createManager = (
           : {}),
         ...(options.resolveProviderInstanceEnvironment !== undefined
           ? { resolveProviderInstanceEnvironment: options.resolveProviderInstanceEnvironment }
+          : {}),
+        ...(options.terminalIntegration
+          ? { terminalIntegration: options.terminalIntegration(baseDir) }
           : {}),
         ...(options.managedBinaryCacheDir === undefined
           ? {}
@@ -874,6 +879,89 @@ it.layer(
         { type: "snapshot", snapshot: expect.objectContaining({ status: "running" }) },
       ]);
       expect(ptyAdapter.spawnInputs).toHaveLength(1);
+    }),
+  );
+
+  it.effect("runs a launch command instead of the shell, and again on restart", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      const command = { file: "fish", args: ["-l", "-c", "exec nvim"] };
+      const exited = yield* Deferred.make<void>();
+      const unsubscribeEvents = yield* manager.subscribe((event) =>
+        event.type === "exited"
+          ? Deferred.succeed(exited, undefined).pipe(Effect.asVoid)
+          : Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribeEvents));
+
+      yield* manager.open(openInput({ command }));
+      // A reopen with the same command keeps the running program.
+      yield* manager.open(openInput({ command }));
+      expect(ptyAdapter.spawnInputs.map(({ shell, args }) => ({ shell, args }))).toEqual([
+        { shell: "fish", args: ["-l", "-c", "exec nvim"] },
+      ]);
+
+      ptyAdapter.processes[0]?.emitExit({ exitCode: 0, signal: 0 });
+      yield* Deferred.await(exited);
+      // A restart that does not name a command keeps the session's program.
+      const unsubscribe = yield* manager.attachStream(
+        { ...openInput(), restartIfNotRunning: true },
+        () => Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      expect(ptyAdapter.spawnInputs).toHaveLength(2);
+      expect(ptyAdapter.spawnInputs[1]).toMatchObject({
+        shell: "fish",
+        args: ["-l", "-c", "exec nvim"],
+      });
+    }),
+  );
+
+  it.effect("resumed attaches recreate a launch command's terminal with that command", () =>
+    Effect.gen(function* () {
+      const { manager, ptyAdapter } = yield* createManager();
+      const unsubscribe = yield* manager.attachStream(
+        { ...openInput(), resume: true, command: { file: "nvim", args: [] } },
+        () => Effect.void,
+      );
+      yield* Effect.addFinalizer(() => Effect.sync(unsubscribe));
+      expect(ptyAdapter.spawnInputs).toHaveLength(1);
+      expect(ptyAdapter.spawnInputs[0]?.shell).toBe("nvim");
+    }),
+  );
+
+  it.effect("gives terminals the T3 env and launch commands a fresh Neovim socket", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const socketDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-nvim-" });
+      let integration: TerminalIntegrationOptions | undefined;
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        terminalIntegration: (baseDir) => {
+          integration = { baseDir, socketDir };
+          return integration;
+        },
+      });
+      const socket = neovimSocketPath({
+        socketDir,
+        baseDir: integration!.baseDir,
+        threadId: "thread-1",
+        terminalId: "nvim",
+      });
+      // A socket left by a crashed Neovim would make `nvim --listen` fail.
+      yield* fs.writeFileString(socket, "stale");
+
+      yield* manager.open(openInput({ terminalId: "shell" }));
+      yield* manager.open(openInput({ terminalId: "nvim", command: { file: "nvim", args: [] } }));
+      const [shellEnv, nvimEnv] = ptyAdapter.spawnInputs.map((input) => input.env);
+      expect(shellEnv).toMatchObject({
+        T3_THREAD_ID: "thread-1",
+        T3_TERMINAL_ID: "shell",
+        T3_PROJECT_ROOT: openInput().cwd,
+        T3_HOME: integration!.baseDir,
+      });
+      expect(shellEnv).not.toHaveProperty("T3_NVIM_SOCKET");
+      expect(nvimEnv).toMatchObject({ T3_TERMINAL_ID: "nvim", T3_NVIM_SOCKET: socket });
+      expect(yield* fs.exists(socket)).toBe(false);
     }),
   );
 

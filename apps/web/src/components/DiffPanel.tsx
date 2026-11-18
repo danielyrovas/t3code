@@ -1486,6 +1486,7 @@ export default function DiffPanel({
                         filePath,
                         workspaceRoot: activeCwd,
                         repositoryRoot: diffPathRepositoryRoot,
+                        threadRef: routeThreadRef,
                       },
                       event,
                     );

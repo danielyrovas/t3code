@@ -32,6 +32,7 @@ import {
   type ProviderInstanceId,
   type ResolvedKeybindingsConfig,
   type ScopedThreadRef,
+  type TerminalLaunchCommand,
   type ThreadId,
 } from "@t3tools/contracts";
 import { getTerminalLabel } from "@t3tools/shared/terminalLabelsCopy";
@@ -476,6 +477,8 @@ interface TerminalViewportProps {
   cwd: string;
   worktreePath?: string | null;
   runtimeEnv?: Record<string, string>;
+  /** Runs instead of the shell; the server also relaunches it after its own restart. */
+  command?: TerminalLaunchCommand;
   providerInstanceId?: ProviderInstanceId;
   onSessionExited: () => void;
   onAddTerminalContext?: (selection: TerminalContextSelection) => void;
@@ -489,6 +492,7 @@ interface TerminalLaunchLocation {
   readonly cwd: string;
   readonly worktreePath?: string | null;
   readonly runtimeEnv?: Record<string, string>;
+  readonly command?: TerminalLaunchCommand;
 }
 
 export function TerminalViewport(props: TerminalViewportProps) {
@@ -499,6 +503,7 @@ export function TerminalViewport(props: TerminalViewportProps) {
     props.cwd,
     props.worktreePath ?? null,
     runtimeEnvSignature(props.runtimeEnv),
+    props.command ?? null,
   ]);
   return <TerminalSessionViewport key={sessionKey} {...props} />;
 }
@@ -512,6 +517,7 @@ function TerminalSessionViewport({
   cwd,
   worktreePath,
   runtimeEnv,
+  command,
   providerInstanceId,
   onSessionExited,
   onAddTerminalContext,
@@ -622,6 +628,7 @@ function TerminalSessionViewport({
     cwd,
     ...(worktreePath !== undefined ? { worktreePath } : {}),
     ...(runtimeEnv ? { env: runtimeEnv } : {}),
+    ...(command ? { command } : {}),
     ...(providerInstanceId ? { providerInstanceId } : {}),
   });
   // Attaching starts with the viewport, while the WASM surface is still loading;
@@ -1369,6 +1376,9 @@ function TerminalSplitPanes({
                   : {})}
                 {...(terminalLaunchLocation.runtimeEnv
                   ? { runtimeEnv: terminalLaunchLocation.runtimeEnv }
+                  : {})}
+                {...(terminalLaunchLocation.command
+                  ? { command: terminalLaunchLocation.command }
                   : {})}
                 onSessionExited={() => onCloseTerminal(terminalId, threadRef)}
                 onAddTerminalContext={onAddTerminalContext}

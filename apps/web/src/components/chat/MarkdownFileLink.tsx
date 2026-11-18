@@ -10,6 +10,7 @@ import type { ContextMenuSource, EnvironmentId, ScopedThreadRef } from "@t3tools
 import { memo, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { useGT } from "gt-react";
 import { FolderIcon } from "lucide-react";
+import { canOpenInThreadNeovim } from "../../lib/neovimOpen";
 
 import { contextMenuSourceOf } from "../../contextMenuSource";
 import { readLocalApi } from "../../localApi";
@@ -44,6 +45,8 @@ interface MarkdownFileLinkProps {
   threadRef?: ScopedThreadRef | undefined;
   onOpen?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
   onOpenInPanel: (panelPath: string, line: number | undefined) => void;
+  /** Opens in the Files surface, which the primary click skips while Neovim handles it. */
+  onOpenInFiles?: ((panelPath: string) => void) | undefined;
   resolveDragPath: () => Promise<string>;
   resolveCopyPaths: () => Promise<ReturnType<typeof markdownFileCopyPaths>>;
   openInEditorMenuLabel: string;
@@ -70,6 +73,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
   threadRef,
   onOpen,
   onOpenInPanel,
+  onOpenInFiles,
   openInEditorMenuLabel,
   onOpenInBrowser,
   onOpenMedia,
@@ -259,6 +263,10 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
       const clicked = await api.contextMenu.show(
         [
           ...(onOpenMedia ? ([{ id: "preview-media", label: gt("Preview media") }] as const) : []),
+          // Only offered while the primary click opens Neovim.
+          ...(onOpenInFiles && threadRef && panelPath && canOpenInThreadNeovim(threadRef)
+            ? ([{ id: "open-in-files", label: gt("Open in file viewer") }] as const)
+            : []),
           ...(onOpen ? ([{ id: "open", label: openInEditorMenuLabel }] as const) : []),
           ...(onOpenInBrowser
             ? ([{ id: "open-in-browser", label: gt("Open in integrated browser") }] as const)
@@ -272,6 +280,10 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
 
       if (clicked === "preview-media") {
         onOpenMedia?.();
+        return;
+      }
+      if (clicked === "open-in-files") {
+        if (panelPath) onOpenInFiles?.(panelPath);
         return;
       }
       if (clicked === "open") {
@@ -425,6 +437,7 @@ function areMarkdownFileLinkPropsEqual(
     previous.isAppBundle === next.isAppBundle &&
     previous.onOpen === next.onOpen &&
     previous.onOpenInPanel === next.onOpenInPanel &&
+    previous.onOpenInFiles === next.onOpenInFiles &&
     previous.openInEditorMenuLabel === next.openInEditorMenuLabel &&
     previous.onOpenInBrowser === next.onOpenInBrowser &&
     previous.onOpenMedia === next.onOpenMedia &&
