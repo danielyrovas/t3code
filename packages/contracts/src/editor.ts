@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema";
-import { PositiveInt, TrimmedNonEmptyString } from "./baseSchemas.ts";
+import { PositiveInt, ThreadId, TrimmedNonEmptyString } from "./baseSchemas.ts";
 
 export const EditorLaunchStyle = Schema.Literals(["direct-path", "goto", "line-column"]);
 export type EditorLaunchStyle = typeof EditorLaunchStyle.Type;
@@ -145,6 +145,8 @@ export const EDITORS = [
     launchStyle: "line-column",
     jetbrainsProductCode: "WS",
   },
+  // Opens in a running Neovim that listens for the file's folder, never as a new process.
+  { id: "neovim", label: "Neovim", commands: ["nvim"], launchStyle: "direct-path" },
   { id: "file-manager", label: "File Manager", commands: null, launchStyle: "direct-path" },
 ] as const satisfies ReadonlyArray<EditorDefinition>;
 
@@ -164,8 +166,10 @@ export const LaunchEditorInput = Schema.Struct({
       column: Schema.optional(PositiveInt),
     }),
   ),
-  /** Workspace the target belongs to; JetBrains IDEs open positioned files in this project. */
+  /** Workspace the target belongs to; JetBrains IDEs open positioned files in this project, and editors start in it. */
   projectRoot: Schema.optional(TrimmedNonEmptyString),
+  /** The thread the open comes from; editors get it as T3_THREAD_ID, and t3.nvim attaches it. */
+  threadId: Schema.optional(ThreadId),
   /** Only for file-manager; requires the server's shellRevealInFileManager capability. */
   reveal: Schema.optional(Schema.Boolean),
 });

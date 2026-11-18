@@ -35,6 +35,28 @@ describe("openDiffFilePrimaryAction", () => {
     expect(openInEditor).not.toHaveBeenCalled();
   });
 
+  it("offers Neovim the absolute path, with the file viewer as its fallback", () => {
+    const openInNeovim = vi.fn();
+    openDiffFilePrimaryAction({
+      threadRef: THREAD_REF,
+      filePath: "frontend/Dockerfile",
+      activeCwd: "/repo/frontend",
+      repositoryRoot: "/repo",
+      openInEditor: vi.fn(),
+      openInNeovim,
+    });
+    const panel = () =>
+      selectThreadRightPanelState(useRightPanelStore.getState().byThreadKey, THREAD_REF);
+    expect(openInNeovim).toHaveBeenCalledExactlyOnceWith(
+      THREAD_REF.environmentId,
+      { path: "/repo/frontend/Dockerfile", workspace: "/repo/frontend", threadId: "thread-1" },
+      expect.any(Function),
+    );
+    expect(panel().isOpen).toBe(false);
+    openInNeovim.mock.calls[0]![2]();
+    expect(panel()).toMatchObject({ isOpen: true, activeSurfaceId: "file:Dockerfile" });
+  });
+
   it("preserves repository-relative paths in a separate worktree", () => {
     expect(
       resolveDiffPathForWorkspace({

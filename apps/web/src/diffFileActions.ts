@@ -3,9 +3,11 @@ import {
   isAbsolutePath,
   isWindowsAbsolutePath,
   normalizeProjectPathForComparison,
+  resolveWorkspaceFilePath,
   workspaceRelativeFilePath,
 } from "@t3tools/shared/path";
 
+import type { openInNeovimOrViewer } from "./lib/neovimOpen";
 import { useRightPanelStore } from "./rightPanelStore";
 import { resolvePathLinkTarget } from "@t3tools/shared/fileLinks";
 
@@ -15,6 +17,8 @@ interface OpenDiffFilePrimaryActionInput {
   readonly activeCwd: string | undefined;
   readonly repositoryRoot?: string | undefined;
   readonly openInEditor: (targetPath: string) => void;
+  /** Takes thread file opens, with the file viewer as its fallback. */
+  readonly openInNeovim?: typeof openInNeovimOrViewer;
 }
 
 function normalizedRelativePathSegments(
@@ -102,6 +106,7 @@ export function openDiffFilePrimaryAction({
   activeCwd,
   repositoryRoot,
   openInEditor,
+  openInNeovim,
 }: OpenDiffFilePrimaryActionInput): void {
   const workspaceFilePath = resolveDiffPathForWorkspace({
     filePath,
@@ -111,7 +116,20 @@ export function openDiffFilePrimaryAction({
   if (!workspaceFilePath) return;
 
   if (threadRef) {
-    useRightPanelStore.getState().openFile(threadRef, workspaceFilePath);
+    const openViewer = () => useRightPanelStore.getState().openFile(threadRef, workspaceFilePath);
+    if (activeCwd && openInNeovim) {
+      openInNeovim(
+        threadRef.environmentId,
+        {
+          path: resolveWorkspaceFilePath(workspaceFilePath, activeCwd),
+          workspace: activeCwd,
+          threadId: threadRef.threadId,
+        },
+        openViewer,
+      );
+    } else {
+      openViewer();
+    }
     return;
   }
 

@@ -1823,6 +1823,8 @@ export default function ChatView(props: ChatViewProps) {
     keybindings,
     availableEditors,
     openInCwd: gitCwd,
+    projectRoot: gitCwd,
+    threadId: activeThreadRef?.threadId,
   });
   const manualCompactionProviderAvailable = hasAvailableCompactionProvider({
     providers: providerInstanceEntries,

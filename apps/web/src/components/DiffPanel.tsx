@@ -36,6 +36,7 @@ import { useOpenInPreferredEditor } from "../editorPreferences";
 import { useFileContextMenuHandler } from "../fileContextMenu";
 import { type DraftId } from "../composerDraftStore";
 import { openDiffFilePrimaryAction } from "../diffFileActions";
+import { openInNeovimOrViewer } from "../lib/neovimOpen";
 import { toolCallDiff } from "../lib/toolCallDiff";
 import { useCheckpointDiff, useTurnItemDetail } from "~/state/queries";
 import { revisionedQuery } from "~/state/revisionedQuery";
@@ -283,6 +284,8 @@ export default function DiffPanel({
   const openInPreferredEditor = useOpenInPreferredEditor(
     activeThread?.environmentId ?? null,
     serverConfig?.availableEditors ?? [],
+    activeCwd,
+    routeThreadRef?.threadId,
   );
   const getDiffFileContents = useAtomCommand(reviewEnvironment.diffFileContents);
   const gitStatusQuery = useEnvironmentQuery(
@@ -869,6 +872,7 @@ export default function DiffPanel({
       filePath: repositoryFile?.insideThreadFolder === false ? repositoryFile.path : filePath,
       activeCwd: repositoryFile?.insideThreadFolder === false ? repositoryFile.cwd : activeCwd,
       repositoryRoot: repositoryFile ? undefined : diffPathRepositoryRoot,
+      openInNeovim: openInNeovimOrViewer,
       openInEditor: (targetPath) => {
         void (async () => {
           const result = await openInPreferredEditor(targetPath);
@@ -1683,11 +1687,14 @@ export default function DiffPanel({
                             filePath,
                             workspaceRoot: activeCwd,
                             repositoryRoot: repositoryFile ? undefined : diffPathRepositoryRoot,
+                            threadRef: routeThreadRef,
+                            threadId: routeThreadRef?.threadId,
                           }
                         : {
                             environmentId: activeThread?.environmentId ?? null,
                             filePath: repositoryFile.path,
                             workspaceRoot: repositoryFile.cwd,
+                            threadId: routeThreadRef?.threadId,
                           },
                       event,
                     );

@@ -5,6 +5,7 @@ import {
   EditorId,
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { T, useGT, useMessages, Var } from "gt-react";
 import { memo, use, useRef } from "react";
@@ -78,6 +79,8 @@ export const OpenInPicker = memo(function OpenInPicker({
   availableEditors,
   openInCwd,
   openInCwdIsFile = false,
+  projectRoot = null,
+  threadId,
   presentation = "toolbar",
   compact = false,
   enableShortcut = true,
@@ -89,6 +92,10 @@ export const OpenInPicker = memo(function OpenInPicker({
   availableEditors: ReadonlyArray<EditorId>;
   openInCwd: string | null;
   openInCwdIsFile?: boolean;
+  /** The thread's workspace; the editor starts there. */
+  projectRoot?: string | null;
+  /** The thread the open comes from; editors get it as T3_THREAD_ID. */
+  threadId?: ThreadId | undefined;
   presentation?: "toolbar" | "menu";
   compact?: boolean;
   enableShortcut?: boolean;
@@ -142,6 +149,8 @@ export const OpenInPicker = memo(function OpenInPicker({
       input: {
         cwd: openInCwd,
         editor,
+        ...(projectRoot ? { projectRoot } : {}),
+        ...(threadId ? { threadId } : {}),
         ...(fileManagerAction === "reveal" && editor === "file-manager" ? { reveal: true } : {}),
       },
     });

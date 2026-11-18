@@ -4,6 +4,7 @@ import {
   EditorId,
   EnvironmentAuthorizationError,
   EnvironmentId,
+  type ThreadId,
 } from "@t3tools/contracts";
 import {
   mapAtomCommandResult,
@@ -92,6 +93,7 @@ export function useOpenInPreferredEditor(
   environmentId: EnvironmentId | null,
   availableEditors: readonly EditorId[],
   projectRoot?: string,
+  threadId?: ThreadId,
 ) {
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, {
     reportFailure: false,
@@ -149,6 +151,7 @@ export function useOpenInPreferredEditor(
         ...(uri ? { position: { line, column } } : {}),
         editor,
         ...(projectRoot ? { projectRoot } : {}),
+        ...(threadId ? { threadId } : {}),
       },
     });
     return mapAtomCommandResult(result, () => editor);

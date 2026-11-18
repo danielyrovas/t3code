@@ -1022,6 +1022,8 @@ function CheckoutGitActionsControl({
   const openInPreferredEditor = useOpenInPreferredEditor(
     activeEnvironmentId,
     serverConfig?.availableEditors ?? [],
+    gitCwd ?? undefined,
+    activeThreadRef?.threadId,
   );
   const threadToastData = activeThreadRef ? { threadRef: activeThreadRef } : undefined;
   const canCreateFeatureBranch = canWriteSourceControl && (branchFollower?.canFollow() ?? true);

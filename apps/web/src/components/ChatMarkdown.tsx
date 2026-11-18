@@ -149,6 +149,7 @@ import { hostEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { cn } from "../lib/utils";
 import { resolveRemoteOpenState, useRemoteOpenResolution } from "../remoteOpen";
 import { rightPanelHostRef, useRightPanelStore } from "../rightPanelStore";
+import { openInNeovimOrViewer } from "../lib/neovimOpen";
 import { useOpenIssueLink } from "../lib/openIssueLink";
 import { issueTrackerEnvironment } from "../state/issueTrackers";
 import { useEnvironmentQuery } from "../state/query";
@@ -745,7 +746,12 @@ function useChatMarkdownState(
     ).data ?? undefined;
   const [preferredEditor] = usePreferredEditor(availableEditors);
   const preferredEditorMenuLabel = openInEditorMenuLabel(preferredEditor, messages);
-  const openInPreferredEditor = useOpenInPreferredEditor(environmentId, availableEditors, cwd);
+  const openInPreferredEditor = useOpenInPreferredEditor(
+    environmentId,
+    availableEditors,
+    cwd,
+    threadRef?.threadId,
+  );
   const openInEditor = useAtomCommand(shellEnvironment.openInEditor, {
     reportFailure: false,
   });
@@ -943,7 +949,11 @@ function useChatMarkdownState(
     }
     return findAgentDirectoryMatch(workspaceRelativePath, agentRoots, searchRoot);
   };
-  const openFileInPanel = (fileLinkMeta: MarkdownFileLinkMeta, panelPath: string) => {
+  const openFileInPanel = (
+    fileLinkMeta: MarkdownFileLinkMeta,
+    panelPath: string,
+    tryNeovim = true,
+  ) => {
     if (!threadRef) return;
     // The panel reads relative paths from the thread's folder. A pull request body's `cwd` is the
     // checkout of its repository, which can be another folder.
@@ -953,16 +963,33 @@ function useChatMarkdownState(
       projects.find(
         (project) => project.environmentId === environmentId && project.id === shell?.projectId,
       )?.workspaceRoot;
-    const openAt = (path: string) =>
-      useRightPanelStore
-        .getState()
-        .openFile(
-          threadRef,
-          cwd && panelRoot !== undefined && cwd !== panelRoot
-            ? resolveWorkspaceFilePath(path, cwd)
-            : path,
-          fileLinkMeta.line,
-        );
+    const openAt = (path: string) => {
+      const openViewer = () =>
+        useRightPanelStore
+          .getState()
+          .openFile(
+            threadRef,
+            cwd && panelRoot !== undefined && cwd !== panelRoot
+              ? resolveWorkspaceFilePath(path, cwd)
+              : path,
+            fileLinkMeta.line,
+          );
+      if (!cwd || !tryNeovim) {
+        openViewer();
+        return;
+      }
+      openInNeovimOrViewer(
+        threadRef.environmentId,
+        {
+          path: resolveWorkspaceFilePath(path, cwd),
+          line: fileLinkMeta.line,
+          column: fileLinkMeta.column,
+          workspace: panelRoot ?? cwd,
+          threadId: threadRef.threadId,
+        },
+        openViewer,
+      );
+    };
     if (
       fileLinkMeta.workspaceLookupPath === null ||
       !cwd ||
@@ -1059,6 +1086,7 @@ function useChatMarkdownState(
           markdownFileCopyPaths(fileLinkMeta, await resolveHostPath(), cwd)
         }
         onOpenInPanel={(path) => openFileInPanel(fileLinkMeta, path)}
+        onOpenInFiles={(path) => openFileInPanel(fileLinkMeta, path, false)}
         onOpenMedia={
           threadRef && canPreviewMedia
             ? () => openMarkdownMedia(mediaPath, fileLinkMeta.filePath)

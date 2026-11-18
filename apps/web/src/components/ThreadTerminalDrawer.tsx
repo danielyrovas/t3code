@@ -601,6 +601,7 @@ function TerminalSessionViewport({
     environmentId,
     serverConfig?.availableEditors ?? [],
     worktreePath ?? cwd,
+    threadRef.threadId,
   );
   const openTerminalPath = useEffectEvent((target: string) => openInPreferredEditor(target));
   const openPreview = useAtomCommand(previewEnvironment.open, {

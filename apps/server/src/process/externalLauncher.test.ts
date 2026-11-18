@@ -16,7 +16,7 @@ import * as Sink from "effect/Sink";
 import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 
-import { EDITORS } from "@t3tools/contracts";
+import { EDITORS, ThreadId } from "@t3tools/contracts";
 import { resolveEditorCommand } from "@t3tools/shared/editor";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import { SpawnExecutableResolution } from "@t3tools/shared/shell";
@@ -195,6 +195,43 @@ it.effect.skipIf(windowsHost)("reports a Finder reveal that open -R rejects", ()
     assert.instanceOf(error, ExternalLauncher.ExternalLauncherEditorSpawnError);
     assert.include(String(error), target);
   }).pipe(Effect.provide(NodeServices.layer)),
+);
+
+it.effect.skipIf(windowsHost)("starts editors in the thread's workspace with its thread id", () =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const bin = yield* fs.makeTempDirectoryScoped({ prefix: "t3-editor-cwd-" });
+    yield* fs.writeFileString(path.join(bin, "code"), "#!/bin/sh\n");
+    yield* fs.chmod(path.join(bin, "code"), 0o755);
+    const spawned: ChildProcess.StandardCommand[] = [];
+    yield* Effect.gen(function* () {
+      const launcher = yield* ExternalLauncher.ExternalLauncher;
+      for (const projectRoot of [bin, path.join(bin, "missing"), undefined]) {
+        yield* launcher.launchEditor({
+          editor: "vscode",
+          cwd: "/etc/hosts",
+          ...(projectRoot === undefined ? {} : { projectRoot, threadId: ThreadId.make("t-1") }),
+        });
+      }
+    }).pipe(
+      Effect.provide(
+        layerTest({
+          platform: "darwin",
+          env: { PATH: bin },
+          onSpawn: (command) => spawned.push(command),
+        }),
+      ),
+    );
+    assert.deepEqual(
+      spawned.map((command) => [command.options.cwd, command.options.env?.T3_THREAD_ID]),
+      [
+        [bin, "t-1"],
+        [undefined, "t-1"],
+        [undefined, undefined],
+      ],
+    );
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 );
 
 it.effect.skipIf(windowsHost)(

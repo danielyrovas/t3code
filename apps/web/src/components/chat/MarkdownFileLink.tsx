@@ -44,6 +44,8 @@ interface MarkdownFileLinkProps {
   threadRef?: ScopedThreadRef | undefined;
   onOpen?: (() => Promise<AtomCommandResult<unknown, unknown>>) | undefined;
   onOpenInPanel: (panelPath: string, line: number | undefined) => void;
+  /** Opens in the file viewer, which the primary click skips while a Neovim takes the file. */
+  onOpenInFiles?: ((panelPath: string) => void) | undefined;
   resolveDragPath: () => Promise<string>;
   resolveCopyPaths: () => Promise<ReturnType<typeof markdownFileCopyPaths>>;
   openInEditorMenuLabel: string;
@@ -70,6 +72,7 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
   threadRef,
   onOpen,
   onOpenInPanel,
+  onOpenInFiles,
   openInEditorMenuLabel,
   onOpenInBrowser,
   onOpenMedia,
@@ -260,6 +263,9 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
         [
           ...(onOpenMedia ? ([{ id: "preview-media", label: gt("Preview media") }] as const) : []),
           ...(onOpen ? ([{ id: "open", label: openInEditorMenuLabel }] as const) : []),
+          ...(onOpenInFiles && panelPath
+            ? ([{ id: "open-in-files", label: gt("Open in file viewer") }] as const)
+            : []),
           ...(onOpenInBrowser
             ? ([{ id: "open-in-browser", label: gt("Open in integrated browser") }] as const)
             : []),
@@ -272,6 +278,10 @@ export const MarkdownFileLink = memo(function MarkdownFileLink({
 
       if (clicked === "preview-media") {
         onOpenMedia?.();
+        return;
+      }
+      if (clicked === "open-in-files") {
+        if (panelPath) onOpenInFiles?.(panelPath);
         return;
       }
       if (clicked === "open") {
@@ -429,6 +439,7 @@ function areMarkdownFileLinkPropsEqual(
     previous.isAppBundle === next.isAppBundle &&
     previous.onOpen === next.onOpen &&
     previous.onOpenInPanel === next.onOpenInPanel &&
+    previous.onOpenInFiles === next.onOpenInFiles &&
     previous.openInEditorMenuLabel === next.openInEditorMenuLabel &&
     previous.onOpenInBrowser === next.onOpenInBrowser &&
     previous.onOpenMedia === next.onOpenMedia &&

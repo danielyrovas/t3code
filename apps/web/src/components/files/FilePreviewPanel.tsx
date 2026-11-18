@@ -1612,6 +1612,8 @@ export default function FilePreviewPanel({
               availableEditors={availableEditors}
               enableShortcut={openInShortcutEnabled}
               openInCwd={absolutePath}
+              projectRoot={cwd}
+              threadId={threadRef.threadId}
               openInCwdIsFile={file.isFile}
               compact
               fileManagerAction={fileManagerAction}

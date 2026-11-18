@@ -438,6 +438,19 @@ Follow an agent's file link to read a report or other file outside the workspace
 These files open read-only. An HTML file outside the workspace cannot load scripts,
 styles, or images from neighboring files.
 
+## Open file links in Neovim
+
+A click on a file link in chat or a diff opens the file in a running Neovim whose
+working directory holds it, at the link's line. A file outside every Neovim's working
+directory, such as `/etc/hosts`, opens in the Neovim of the thread's worktree or project
+folder. With no such Neovim, the file opens in the file viewer. T3 Code finds a Neovim that listens on a socket named
+`/tmp/t3-nvim-<uid>/<home>-<name>.sock`, where `<home>` is the first 8 hex digits of
+the SHA-256 of the T3 Code home folder. With t3.nvim installed, the file opens through it,
+and its prompt goes to the thread you clicked in.
+A Neovim that `herdr-nvim` started opens the file through `herdr-nvim`, which also
+brings its herdr tab to the front. To use the file viewer, right-click the link and
+choose **Open in file viewer**.
+
 ## HTML and PDF files in the file viewer
 
 On web and desktop, HTML and PDF files open as rendered pages. Switch an HTML

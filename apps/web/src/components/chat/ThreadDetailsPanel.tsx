@@ -233,6 +233,8 @@ export function ThreadDetailsPanel(props: ThreadDetailsPanelProps) {
                         environmentId={props.environmentId}
                         availableEditors={props.availableEditors}
                         openInCwd={props.gitCwd}
+                        projectRoot={props.gitCwd}
+                        threadId={props.threadId}
                         enableShortcut={props.openInShortcutEnabled}
                         displayMode="panel"
                       />

@@ -824,6 +824,16 @@ const launchEditor = Effect.fn("externalLauncher.launchEditor")(function* (
   const projectRoot =
     input.projectRoot === undefined ? undefined : expandHomePath(input.projectRoot, home);
   const launch = yield* resolveEditorLaunch({ ...input, cwd, projectRoot });
+  // Fork: the editor starts in the target's workspace, so a wrapper script can find it for
+  // files outside any checkout.
+  const workspace =
+    projectRoot !== undefined &&
+    (yield* (yield* FileSystem.FileSystem).stat(projectRoot).pipe(
+      Effect.map((info) => info.type === "Directory"),
+      Effect.orElseSucceed(() => false),
+    ))
+      ? projectRoot
+      : undefined;
   if (input.editor === "file-manager" && input.reveal === true) {
     const platform = yield* HostProcess.Platform;
     if (
@@ -837,7 +847,7 @@ const launchEditor = Effect.fn("externalLauncher.launchEditor")(function* (
       return yield* revealWindowsItem(launch.target);
     }
   }
-  yield* launchEditorProcess(launch);
+  yield* launchEditorProcess(launch, workspace, input.threadId);
 });
 
 const GRAPHICAL_SESSION_ENV_KEYS: ReadonlySet<string> = new Set([
@@ -937,6 +947,8 @@ const launchBrowser = Effect.fn("externalLauncher.launchBrowser")(function* (
 
 const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(function* (
   launch: EditorLaunch,
+  cwd?: string,
+  threadId?: string,
 ): Effect.fn.Return<
   void,
   ExternalLauncherError,
@@ -962,7 +974,12 @@ const launchEditorProcess = Effect.fn("externalLauncher.launchEditorProcess")(fu
       options: {
         detached: launch.detached ?? true,
         shell: spawnCommand.shell,
-        env: yield* readGraphicalSessionEnv(),
+        ...(cwd === undefined ? {} : { cwd }),
+        env: {
+          ...(yield* readGraphicalSessionEnv()),
+          // Fork: wrapper scripts pass it on, e.g. to t3.nvim.
+          ...(threadId === undefined ? {} : { T3_THREAD_ID: threadId }),
+        },
         stdin: "ignore",
         stdout: "ignore",
         stderr: "ignore",

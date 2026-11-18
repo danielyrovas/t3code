@@ -3,6 +3,7 @@ import {
   type EditorId,
   type EnvironmentId,
   type ResolvedKeybindingsConfig,
+  type ThreadId,
 } from "@t3tools/contracts";
 import { msg } from "gt-react";
 import { useEffect } from "react";
@@ -48,12 +49,18 @@ export function useOpenFavoriteEditorShortcut({
   keybindings,
   availableEditors,
   openInCwd,
+  projectRoot = null,
+  threadId,
 }: {
   enabled: boolean;
   environmentId: EnvironmentId;
   keybindings: ResolvedKeybindingsConfig;
   availableEditors: ReadonlyArray<EditorId>;
   openInCwd: string | null;
+  /** The thread's workspace; the editor starts there. */
+  projectRoot?: string | null;
+  /** The thread the open comes from; editors get it as T3_THREAD_ID. */
+  threadId?: ThreadId | undefined;
 }) {
   const openInEditorMutation = useAtomCommand(shellEnvironment.openInEditor, "open in editor");
   const remote = useRemoteOpenState(environmentId);
@@ -94,6 +101,8 @@ export function useOpenFavoriteEditorShortcut({
         input: {
           cwd: openInCwd,
           editor: preferredEditor,
+          ...(projectRoot ? { projectRoot } : {}),
+          ...(threadId ? { threadId } : {}),
         },
       }).then((result) => {
         if (result._tag === "Success") announce(m(msg("Opened in {editor}", { editor: label })));
@@ -106,6 +115,8 @@ export function useOpenFavoriteEditorShortcut({
     environmentId,
     keybindings,
     openInCwd,
+    projectRoot,
+    threadId,
     openInEditorMutation,
     preferredEditor,
     remote,
