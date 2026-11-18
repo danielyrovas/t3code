@@ -82,6 +82,7 @@ import * as NativeTelemetryClient from "../resourceTelemetry/NativeTelemetryClie
 import { terminalOutputStream } from "./OutputProtocol.ts";
 import {
   defaultNeovimSocketDir,
+  quitNeovim,
   terminalIntegrationEnv,
   type TerminalIntegrationOptions,
 } from "./neovim.ts";
@@ -331,6 +332,8 @@ interface TerminalSessionState {
   runtimeEnv: Record<string, string> | null;
   /** Runs in place of the resolved shell on every start, including restarts. */
   launchCommand: TerminalLaunchCommand | null;
+  /** The `--listen` socket of the running program's Neovim, if it has one. */
+  neovimSocket: string | null;
   stopOnSettle: boolean;
   startupError: string | null;
 }
@@ -2933,6 +2936,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
                 ),
               );
             }
+            session.neovimSocket = terminalEnv.T3_NVIM_SOCKET ?? null;
             const spawnResult = yield* trySpawn(shellCandidates, terminalEnv, session);
             ptyProcess = spawnResult.process;
             startedShell = spawnResult.shellLabel;
@@ -3335,6 +3339,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
         childCommandLabel: null,
         runtimeEnv: normalizedRuntimeEnv(input.env),
         launchCommand: input.command ?? null,
+        neovimSocket: null,
         stopOnSettle: input.stopOnSettle ?? false,
         startupError: null,
       };
@@ -3922,6 +3927,7 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
           (session): session is TerminalSessionState & { pid: number } =>
             session.status === "running" &&
             Number.isInteger(session.pid) &&
+            session.neovimSocket === null &&
             (input.terminalId === undefined || session.terminalId === input.terminalId),
         );
         if (running.length === 0) return;
@@ -3964,8 +3970,13 @@ export const makeWithOptions = Effect.fn("TerminalManager.makeWithOptions")(func
       Effect.gen(function* () {
         const sessions = yield* sessionsForThread(input.threadId);
         yield* Effect.forEach(
-          sessions.filter((session) => session.stopOnSettle),
-          (session) => closeSession(input.threadId, session.terminalId, false),
+          sessions,
+          (session) =>
+            session.neovimSocket !== null && session.status === "running"
+              ? Effect.promise(() => quitNeovim(session.neovimSocket!))
+              : session.stopOnSettle
+                ? closeSession(input.threadId, session.terminalId, false)
+                : Effect.void,
           { discard: true },
         );
       }),

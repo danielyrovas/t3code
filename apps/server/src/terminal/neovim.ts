@@ -375,6 +375,14 @@ end
 return true
 `;
 
+/**
+ * Asks the Neovim at `socket` to `:qall`, so a modified buffer keeps it open. It never rejects:
+ * Neovim usually exits before it answers.
+ */
+export async function quitNeovim(socket: string): Promise<void> {
+  await neovimRequest(socket, "nvim_command", ["qall"], 1_000).catch(() => undefined);
+}
+
 const isRetryableConnectError = (error: unknown) =>
   error instanceof Error &&
   "code" in error &&

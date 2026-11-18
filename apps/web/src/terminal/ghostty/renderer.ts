@@ -178,16 +178,15 @@ export function measureGhosttyCell(
   fontFamily: string,
 ): GhosttyCellMetrics {
   context.font = `normal 400 ${fontSize}px ${fontFamily}`;
-  const widthMeasurement = context.measureText("M");
-  const verticalMeasurement = context.measureText("Mg");
-  const ascent = verticalMeasurement.actualBoundingBoxAscent || fontSize;
-  const descent = verticalMeasurement.actualBoundingBoxDescent;
-  const glyphHeight = ascent + descent;
-  const height = Math.max(1, Math.round(fontSize * 1.35), Math.ceil(glyphHeight));
+  const measurement = context.measureText("M");
+  // The font's own line box: box-drawing glyphs span it exactly, so rows join without gaps.
+  const ascent = measurement.fontBoundingBoxAscent || fontSize;
+  const descent = measurement.fontBoundingBoxDescent || 0;
+  const height = Math.max(1, Math.ceil(ascent + descent));
   return {
-    width: Math.max(1, widthMeasurement.width),
+    width: Math.max(1, measurement.width),
     height,
-    baseline: Math.round((height - glyphHeight) / 2 + ascent),
+    baseline: Math.round((height - ascent - descent) / 2 + ascent),
   };
 }
 

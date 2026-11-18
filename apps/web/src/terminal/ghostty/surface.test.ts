@@ -141,8 +141,8 @@ describe("GhosttyTerminalSurface visibility", () => {
       fillText: (...args: [string, number, number, number?]) => paint("fillText", args),
       measureText: (text: string) => ({
         width: text.length * 8,
-        actualBoundingBoxAscent: 9,
-        actualBoundingBoxDescent: 3,
+        fontBoundingBoxAscent: 12,
+        fontBoundingBoxDescent: 4,
       }),
     };
     const fakeDocument = {

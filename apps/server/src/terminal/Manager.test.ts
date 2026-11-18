@@ -1,4 +1,5 @@
 import { deriveProviderInstanceConfigMap } from "../provider/ProviderInstanceRegistryHydration.ts";
+import * as NodeNet from "node:net";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
@@ -43,7 +44,7 @@ import * as TestClock from "effect/testing/TestClock";
 import { expect, vi } from "vite-plus/test";
 
 import * as ServerConfig from "../config.ts";
-import { neovimSocketPath, type TerminalIntegrationOptions } from "./neovim.ts";
+import { decodeMsgpackValue, neovimSocketPath, type TerminalIntegrationOptions } from "./neovim.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProcessRunner from "../processRunner.ts";
 import * as ServerSettings from "../serverSettings.ts";
@@ -962,6 +963,37 @@ it.layer(
       expect(shellEnv).not.toHaveProperty("T3_NVIM_SOCKET");
       expect(nvimEnv).toMatchObject({ T3_TERMINAL_ID: "nvim", T3_NVIM_SOCKET: socket });
       expect(yield* fs.exists(socket)).toBe(false);
+    }),
+  );
+
+  it.effect("asks a Neovim terminal to quit on settlement instead of killing it", () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const socketDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-nvim-" });
+      const { manager, ptyAdapter } = yield* createManager(5, {
+        terminalIntegration: (baseDir) => ({ baseDir, socketDir }),
+        processTable: Effect.succeed([{ pid: 9000, ppid: 1, name: "nvim" }]),
+      }).pipe(Effect.provide(layerWithHostPlatform("linux")));
+      yield* manager.open(
+        openInput({ terminalId: "nvim", stopOnSettle: true, command: { file: "nvim", args: [] } }),
+      );
+      const socket = ptyAdapter.spawnInputs[0]!.env.T3_NVIM_SOCKET!;
+      const requests: unknown[] = [];
+      const server = NodeNet.createServer((connection) =>
+        connection.on("data", (chunk) => {
+          requests.push(decodeMsgpackValue(chunk).value);
+          connection.destroy();
+        }),
+      );
+      yield* Effect.acquireRelease(
+        Effect.promise(() => new Promise<void>((resolve) => server.listen(socket, resolve))),
+        () => Effect.promise(() => new Promise<void>((resolve) => server.close(() => resolve()))),
+      );
+
+      yield* manager.closeOnSettle({ threadId: "thread-1" });
+
+      expect(requests).toEqual([[0, 1, "nvim_command", ["qall"]]]);
+      expect(ptyAdapter.processes[0]?.killed).toBe(false);
     }),
   );
 
