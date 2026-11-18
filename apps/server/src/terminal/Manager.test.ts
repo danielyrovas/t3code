@@ -440,6 +440,17 @@ it("does not retain the tail of a control sequence whose introducer was trimmed"
   }
 });
 
+it("leads with the private modes its discarded output set", () => {
+  const history = new TerminalManager.BoundedTerminalHistory(3, "", 1_000);
+  history.append("\u001b[?1049h\u001b[?1000;1006h\u001b[?25l");
+  history.append("\u001b[?25h" + "row\n".repeat(5));
+  expect(history.value()).toBe("\u001b[?1049;1000;1006;25h" + "row\n".repeat(3));
+
+  // RIS forgets every mode set before it.
+  history.append("\u001bc\n" + "row\n".repeat(3));
+  expect(history.value()).toBe("row\n".repeat(3));
+});
+
 it("bounds long partial lines and joins surrogate pairs across chunk boundaries", () => {
   const maxBytes = 65_539;
   let expected = "";

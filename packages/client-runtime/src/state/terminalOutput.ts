@@ -1,8 +1,12 @@
 import {
+  NO_TERMINAL_PRIVATE_MODES,
   retainedTerminalHistory,
   TERMINAL_SEQUENCE_GROUND,
+  terminalPrivateModesAfter,
+  terminalPrivateModesReplay,
   terminalSequenceEnd,
   terminalSequenceStateAfter,
+  type TerminalPrivateModes,
 } from "@t3tools/contracts";
 
 export interface TerminalOutputChunk {
@@ -20,6 +24,8 @@ export interface TerminalOutputState {
   // The terminal parser's state at the first retained code unit. Trimming can cut a control
   // sequence, and a replay has to skip the rest of it instead of printing it.
   readonly sequenceState: number;
+  // Modes the trimmed output set, which a replay has to restore before the retained output.
+  readonly privateModes: TerminalPrivateModes;
   /** Chunks before this offset are replayed to emulators but are no longer displayed text. */
   readonly textStartOffset: number;
 }
@@ -68,6 +74,7 @@ export const EMPTY_TERMINAL_OUTPUT_STATE = Object.freeze<TerminalOutputState>({
   resetVersion: 0,
   nextOffset: 0,
   sequenceState: TERMINAL_SEQUENCE_GROUND,
+  privateModes: NO_TERMINAL_PRIVATE_MODES,
   textStartOffset: 0,
 });
 
@@ -177,6 +184,17 @@ function trimOutputChunkStart(
   };
 }
 
+// The start of the next chunk completes a mode sequence the chunk boundary cut.
+function privateModesAfterChunk(
+  modes: TerminalPrivateModes,
+  chunk: TerminalOutputChunk,
+  next: TerminalOutputChunk | undefined,
+  end = chunk.data.length,
+): TerminalPrivateModes {
+  const text = next === undefined ? chunk.data : chunk.data + next.data.slice(0, 64);
+  return terminalPrivateModesAfter(modes, text, 0, end);
+}
+
 function appendOutput(
   current: TerminalOutputState,
   data: string,
@@ -191,6 +209,7 @@ function appendOutput(
       resetVersion: current.resetVersion + 1,
       nextOffset: current.nextOffset + data.length,
       sequenceState: TERMINAL_SEQUENCE_GROUND,
+      privateModes: NO_TERMINAL_PRIVATE_MODES,
       textStartOffset: current.textStartOffset,
     };
   }
@@ -203,17 +222,20 @@ function appendOutput(
   const chunks = [...current.chunks, ...appended.chunks];
   let retainedBytes = current.retainedBytes + appended.byteLength;
   let sequenceState = current.sequenceState;
+  let privateModes = current.privateModes;
   let firstRetainedIndex = 0;
   while (retainedBytes > maxBufferBytes && firstRetainedIndex < chunks.length) {
     const first = chunks[firstRetainedIndex]!;
     const bytesToDrop = retainedBytes - maxBufferBytes;
     if (bytesToDrop < first.byteLength) {
       const trimmed = trimOutputChunkStart(first, bytesToDrop);
-      sequenceState = terminalSequenceStateAfter(
-        sequenceState,
-        first.data,
-        0,
-        first.data.length - trimmed.data.length,
+      const dropped = first.data.length - trimmed.data.length;
+      sequenceState = terminalSequenceStateAfter(sequenceState, first.data, 0, dropped);
+      privateModes = privateModesAfterChunk(
+        privateModes,
+        first,
+        chunks[firstRetainedIndex + 1],
+        dropped,
       );
       retainedBytes -= first.byteLength - trimmed.byteLength;
       if (trimmed.byteLength > 0) {
@@ -224,6 +246,7 @@ function appendOutput(
       break;
     }
     sequenceState = terminalSequenceStateAfter(sequenceState, first.data);
+    privateModes = privateModesAfterChunk(privateModes, first, chunks[firstRetainedIndex + 1]);
     retainedBytes -= first.byteLength;
     firstRetainedIndex += 1;
   }
@@ -233,8 +256,10 @@ function appendOutput(
     retainedChunks = compactRetainedChunks(retainedChunks);
     const excessChunks = retainedChunks.length - MAX_TERMINAL_OUTPUT_CHUNKS;
     if (excessChunks > 0) {
-      for (const chunk of retainedChunks.slice(0, excessChunks)) {
+      for (let index = 0; index < excessChunks; index += 1) {
+        const chunk = retainedChunks[index]!;
         sequenceState = terminalSequenceStateAfter(sequenceState, chunk.data);
+        privateModes = privateModesAfterChunk(privateModes, chunk, retainedChunks[index + 1]);
         retainedBytes -= chunk.byteLength;
       }
       retainedChunks = retainedChunks.slice(excessChunks);
@@ -248,6 +273,7 @@ function appendOutput(
     resetVersion: current.resetVersion,
     nextOffset: appended.nextOffset,
     sequenceState,
+    privateModes,
     textStartOffset: current.textStartOffset,
   };
 }
@@ -270,6 +296,7 @@ function resetOutput(
     resetVersion: current.resetVersion + 1,
     nextOffset: reset.nextOffset,
     sequenceState: TERMINAL_SEQUENCE_GROUND,
+    privateModes: NO_TERMINAL_PRIVATE_MODES,
     textStartOffset: 0,
   };
 }
@@ -294,7 +321,10 @@ function clearOutput(current: TerminalOutputState, maxBufferBytes: number): Term
 /** Everything a fresh emulator replays: retained output from outside any control sequence. */
 export function terminalOutputReplay(output: TerminalOutputState): string {
   const text = output.chunks.map((chunk) => chunk.data).join("");
-  return text.slice(terminalSequenceEnd(output.sequenceState, text));
+  return (
+    terminalPrivateModesReplay(output.privateModes) +
+    text.slice(terminalSequenceEnd(output.sequenceState, text))
+  );
 }
 
 /** The output as plain text, for surfaces that do not interpret escape sequences. */
@@ -325,7 +355,7 @@ export function readTerminalOutputUpdate(
     const start = terminalSequenceEnd(output.sequenceState, text);
     return {
       type: "reset",
-      data: text.slice(start),
+      data: terminalPrivateModesReplay(output.privateModes) + text.slice(start),
       cursor: {
         ...position,
         sequenceState: terminalSequenceStateAfter(output.sequenceState, text, 0, start),

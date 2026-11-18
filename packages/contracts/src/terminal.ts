@@ -97,9 +97,60 @@ export function terminalSequenceEnd(state: number, text: string): number {
   return index;
 }
 
+export type TerminalPrivateModes = ReadonlyMap<number, boolean>;
+export const NO_TERMINAL_PRIVATE_MODES: TerminalPrivateModes = new Map();
+const PRIVATE_MODE_SEQUENCE = /\u001b(?:\[\?([0-9;]*)([hl])|c)/gu;
+// Programs use a few dozen modes; the cap bounds what hostile output can make us retain.
+const MAX_TRACKED_PRIVATE_MODES = 64;
+
+/**
+ * DEC private modes (`CSI ? Pm h/l`) after the sequences that start in `text.slice(start, end)`.
+ * Text past `end` only completes a sequence cut there. RIS forgets every mode.
+ */
+export function terminalPrivateModesAfter(
+  modes: TerminalPrivateModes,
+  text: string,
+  start = 0,
+  end = text.length,
+): TerminalPrivateModes {
+  const escape = text.indexOf("\u001b", start);
+  if (escape === -1 || escape >= end) return modes;
+  let next: Map<number, boolean> | undefined;
+  PRIVATE_MODE_SEQUENCE.lastIndex = escape;
+  for (
+    let match = PRIVATE_MODE_SEQUENCE.exec(text);
+    match !== null && match.index < end;
+    match = PRIVATE_MODE_SEQUENCE.exec(text)
+  ) {
+    if (match[2] === undefined) {
+      next = new Map();
+      continue;
+    }
+    next ??= new Map(modes);
+    for (const parameter of match[1]!.split(";")) {
+      const mode = Number(parameter);
+      if (parameter.length === 0 || !Number.isSafeInteger(mode)) continue;
+      if (!next.has(mode) && next.size >= MAX_TRACKED_PRIVATE_MODES) continue;
+      next.set(mode, match[2] === "h");
+    }
+  }
+  return next ?? modes;
+}
+
+/** The sequences that put a fresh terminal into `modes`. */
+export function terminalPrivateModesReplay(modes: TerminalPrivateModes): string {
+  const set: number[] = [];
+  const reset: number[] = [];
+  for (const [mode, enabled] of modes) (enabled ? set : reset).push(mode);
+  return (
+    (set.length > 0 ? `\u001b[?${set.join(";")}h` : "") +
+    (reset.length > 0 ? `\u001b[?${reset.join(";")}l` : "")
+  );
+}
+
 /**
  * The final `maxBytes` of UTF-8 a client retains, starting at a code point boundary and
- * outside any control sequence the cut went through.
+ * outside any control sequence the cut went through. Modes the cut output set lead it.
  */
 export function retainedTerminalHistory(history: string, maxBytes: number): string {
   if (maxBytes <= 0) {
@@ -121,13 +172,10 @@ export function retainedTerminalHistory(history: string, maxBytes: number): stri
   }
 
   const retained = historyDecoder.decode(encoded.subarray(start));
-  const state = terminalSequenceStateAfter(
-    TERMINAL_SEQUENCE_GROUND,
-    history,
-    0,
-    history.length - retained.length,
-  );
-  return retained.slice(terminalSequenceEnd(state, retained));
+  const cut = history.length - retained.length;
+  const state = terminalSequenceStateAfter(TERMINAL_SEQUENCE_GROUND, history, 0, cut);
+  const modes = terminalPrivateModesAfter(NO_TERMINAL_PRIVATE_MODES, history, 0, cut);
+  return terminalPrivateModesReplay(modes) + retained.slice(terminalSequenceEnd(state, retained));
 }
 
 const TrimmedNonEmptyStringSchema = TrimmedNonEmptyString;

@@ -6,7 +6,10 @@ import {
   DEFAULT_TERMINAL_ID,
   DEFAULT_MAX_TERMINAL_BUFFER_BYTES,
   retainedTerminalHistory,
+  NO_TERMINAL_PRIVATE_MODES,
   TERMINAL_SEQUENCE_GROUND,
+  terminalPrivateModesAfter,
+  terminalPrivateModesReplay,
   terminalSequenceEnd,
   terminalSequenceStateAfter,
   TerminalCwdError,
@@ -991,6 +994,8 @@ export class BoundedTerminalHistory {
   private lastCodeUnit: number | undefined;
   // The terminal parser's state at the first retained code unit, which is where a replay starts.
   private sequenceState = TERMINAL_SEQUENCE_GROUND;
+  // Modes the discarded output set, which lead the value so a replay restores them.
+  private privateModes = NO_TERMINAL_PRIVATE_MODES;
   private cachedValue: string | null = "";
   private generation = 0;
   private appendedLength = 0;
@@ -1073,9 +1078,21 @@ export class BoundedTerminalHistory {
   private discardChunk(): void {
     const first = this.chunks[this.start]!;
     this.sequenceState = terminalSequenceStateAfter(this.sequenceState, first.data);
+    this.discardPrivateModes(first.data.length);
     this.byteLength -= first.byteLength;
     this.lineBreaks -= first.lineBreaks;
     this.chunks[this.start++] = undefined;
+  }
+
+  private discardPrivateModes(end: number): void {
+    // The start of the next chunk completes a mode sequence the chunk boundary cut.
+    const next = this.chunks[this.start + 1]?.data.slice(0, 64) ?? "";
+    this.privateModes = terminalPrivateModesAfter(
+      this.privateModes,
+      this.chunks[this.start]!.data + next,
+      0,
+      end,
+    );
   }
 
   private trimChunk(offset: number, byteLength: number, lineBreaks: number): void {
@@ -1085,6 +1102,7 @@ export class BoundedTerminalHistory {
       return;
     }
     this.sequenceState = terminalSequenceStateAfter(this.sequenceState, first.data, 0, offset);
+    this.discardPrivateModes(offset);
     first.data = first.data.slice(offset);
     first.byteLength -= byteLength;
     first.lineBreaks -= lineBreaks;
@@ -1157,6 +1175,7 @@ export class BoundedTerminalHistory {
     this.lineBreaks = 0;
     this.lastCodeUnit = undefined;
     this.sequenceState = TERMINAL_SEQUENCE_GROUND;
+    this.privateModes = NO_TERMINAL_PRIVATE_MODES;
     this.cachedValue = "";
   }
 
@@ -1194,10 +1213,12 @@ export class BoundedTerminalHistory {
 
   value(): string {
     if (this.cachedValue !== null) return this.cachedValue;
-    this.cachedValue = this.chunks
-      .slice(this.start)
-      .map((chunk) => chunk!.data)
-      .join("");
+    this.cachedValue =
+      terminalPrivateModesReplay(this.privateModes) +
+      this.chunks
+        .slice(this.start)
+        .map((chunk) => chunk!.data)
+        .join("");
     return this.cachedValue;
   }
 }

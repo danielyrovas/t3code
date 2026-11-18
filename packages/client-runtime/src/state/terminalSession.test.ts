@@ -209,6 +209,42 @@ describe("terminal session reducers", () => {
     }
   });
 
+  it("replays the private modes that trimmed output set", () => {
+    const maxBytes = 16;
+    let state = applyTerminalAttachStreamEvent(
+      EMPTY_TERMINAL_BUFFER_STATE,
+      { type: "snapshot", snapshot: { ...BASE_SNAPSHOT, history: "\u001b[?1049h" } },
+      maxBytes,
+    );
+    // The mouse modes arrive split across two outputs.
+    for (const data of ["\u001b[?10", "00;1006h", "\u001b[?25l", "x".repeat(maxBytes)]) {
+      state = applyTerminalAttachStreamEvent(
+        state,
+        { type: "output", threadId: TARGET.threadId, terminalId: TARGET.terminalId, data },
+        maxBytes,
+      );
+    }
+    expect(readTerminalOutputUpdate(state.output, INITIAL_TERMINAL_OUTPUT_CURSOR)).toMatchObject({
+      type: "reset",
+      data: "\u001b[?1049;1000;1006h\u001b[?25l" + "x".repeat(maxBytes),
+    });
+
+    const snapshot = applyTerminalAttachStreamEvent(
+      EMPTY_TERMINAL_BUFFER_STATE,
+      {
+        type: "snapshot",
+        snapshot: { ...BASE_SNAPSHOT, history: "\u001b[?1000h" + "x".repeat(maxBytes) },
+      },
+      maxBytes,
+    );
+    expect(readTerminalOutputUpdate(snapshot.output, INITIAL_TERMINAL_OUTPUT_CURSOR)).toMatchObject(
+      {
+        type: "reset",
+        data: "\u001b[?1000h" + "x".repeat(maxBytes),
+      },
+    );
+  });
+
   it("delivers all output when several events arrive before a renderer reads", () => {
     const initial = applyTerminalAttachStreamEvent(EMPTY_TERMINAL_BUFFER_STATE, {
       type: "snapshot",
