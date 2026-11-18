@@ -199,6 +199,7 @@ import * as ServerBrowser from "./preview/ServerBrowser.ts";
 import * as DeviceService from "./device/DeviceService.ts";
 import { remoteSshDeviceHosts } from "./device/localSshDeviceHost.ts";
 import * as PreviewManager from "./preview/Manager.ts";
+import * as ComposerPrompts from "./composer/ComposerPrompts.ts";
 import { issueAssetUrl } from "./assets/AssetAccess.ts";
 import {
   attachmentRelativePath,
@@ -1538,6 +1539,7 @@ export const layerWsRpc = (
         threadManagement.getThreadShell,
       );
       const previewManager = yield* PreviewManager.PreviewManager;
+      const composerPrompts = yield* ComposerPrompts.ComposerPrompts;
       const portDiscovery = yield* PortScanner.PortDiscovery;
       const providerRegistry = yield* ProviderRegistry.ProviderRegistry;
       const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
@@ -3291,6 +3293,15 @@ export const layerWsRpc = (
         [WS_METHODS.previewReportProfiles]: (input) => reportProfiles(input),
         [WS_METHODS.previewReportStatus]: (input) => previewManager.reportStatus(input),
         [WS_METHODS.subscribePreviewEvents]: (_input) => previewManager.events,
+        [WS_METHODS.composerReportPrompt]: ({ threadId, prompt, baseRevision, clientId }) =>
+          composerPrompts.set({
+            threadId,
+            prompt,
+            baseRevision,
+            source: "web",
+            originClientId: clientId,
+          }),
+        [WS_METHODS.subscribeComposerPrompts]: (_input) => composerPrompts.events,
         [WS_METHODS.deviceConfigure]: (input) => deviceService.configure(input),
         [WS_METHODS.deviceTestHost]: (input) => deviceService.testHost(input),
         [WS_METHODS.deviceEasAccount]: (input) => deviceService.easAccount(input),

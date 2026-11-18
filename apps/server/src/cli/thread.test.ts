@@ -12,6 +12,10 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Runtime from "effect/Runtime";
+import * as Sink from "effect/Sink";
+import * as Stdio from "effect/Stdio";
+import * as Stream from "effect/Stream";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
 import * as TestClock from "effect/testing/TestClock";
 import * as TestConsole from "effect/testing/TestConsole";
@@ -28,6 +32,7 @@ import {
   readLatestMessages,
   resolveProject,
   threadCommand,
+  ThreadDraftStaleError,
   type ThreadTools,
   titleFromMessage,
   waitForRun,
@@ -573,4 +578,99 @@ it.live("resolves a path inside a git worktree of the project's repository to th
     assert.include(ambiguous.message, "sample (project-sample)");
     assert.include(ambiguous.message, "feature (project-feature)");
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+);
+
+it.effect(
+  "draft get and set keep the editor contract: flags anywhere, stdin, exit 3 when stale",
+  () =>
+    Effect.gen(function* () {
+      const fs = yield* FileSystem.FileSystem;
+      const path = yield* Path.Path;
+      const baseDir = yield* fs.makeTempDirectoryScoped({ prefix: "t3-thread-draft-" });
+      yield* persistServerRuntimeState({
+        path: path.join(baseDir, "userdata", "server-runtime.json"),
+        state: yield* makePersistedServerRuntimeState({
+          config: { host: "127.0.0.1", devUrl: undefined },
+          port: 3_773,
+        }),
+      });
+      const draft = {
+        threadId,
+        prompt: "from web",
+        revision: 4,
+        updatedAt: "2026-11-18T00:00:00.000Z",
+      };
+      const calls: Array<{ readonly tool: string; readonly args: unknown }> = [];
+      using _session = vi.spyOn(McpBridge, "mcpToolSession").mockReturnValue(
+        Effect.succeed({
+          call: (tool, args) => {
+            calls.push({ tool, args });
+            switch (tool) {
+              case "t3_thread_draft_get":
+                return Effect.succeed({ structuredContent: draft });
+              case "t3_thread_draft_set":
+                return Effect.succeed({
+                  structuredContent:
+                    args.baseRevision === 1
+                      ? { ...draft, accepted: false }
+                      : { ...draft, prompt: args.prompt, revision: 5, accepted: true },
+                });
+              default:
+                return Effect.die(`unexpected ${tool} call`);
+            }
+          },
+        }),
+      );
+      const run = (args: ReadonlyArray<string>, stdin = "") =>
+        Command.runWith(threadCommand, { version: "0.0.0" })(args).pipe(
+          Effect.provideService(
+            Stdio.Stdio,
+            Stdio.make({
+              args: Effect.succeed([]),
+              stdout: () => Sink.drain,
+              stderr: () => Sink.drain,
+              stdin: Stream.make(new TextEncoder().encode(stdin)),
+            }),
+          ),
+        );
+
+      yield* run(["draft", "get", "--base-dir", baseDir, threadId, "--json"]);
+      assert.strictEqual((yield* TestConsole.logLines).at(-1), JSON.stringify(draft));
+
+      yield* run(
+        ["draft", "set", "--base-dir", baseDir, threadId, "-", "--json"],
+        "line 1\nline 2\n",
+      );
+      assert.deepStrictEqual(calls.at(-1), {
+        tool: "t3_thread_draft_set",
+        args: { threadId, prompt: "line 1\nline 2\n" },
+      });
+      assert.strictEqual(
+        (yield* TestConsole.logLines).at(-1),
+        JSON.stringify({ ...draft, prompt: "line 1\nline 2\n", revision: 5 }),
+      );
+
+      yield* run(["draft", "set", "--base-dir", baseDir, threadId, "-", "--base-revision", "4"]);
+      assert.deepStrictEqual(calls.at(-1)?.args, { threadId, prompt: "", baseRevision: 4 });
+      assert.strictEqual((yield* TestConsole.logLines).at(-1), "Saved.");
+
+      const stale = yield* run(
+        ["draft", "set", "--base-dir", baseDir, threadId, "-", "--base-revision", "1", "--json"],
+        "mine",
+      ).pipe(Effect.flip);
+      assert.instanceOf(stale, ThreadDraftStaleError);
+      assert.strictEqual(stale[Runtime.errorExitCode], 3);
+      assert.strictEqual((yield* TestConsole.logLines).at(-1), JSON.stringify(draft));
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(
+          NodeServices.layer,
+          NodeCrypto.layer,
+          NetService.layer,
+          TestConsole.layer,
+          ConfigProvider.layer(ConfigProvider.fromEnv({ env: { T3CODE_PORT: "3773" } })),
+        ),
+      ),
+    ),
 );

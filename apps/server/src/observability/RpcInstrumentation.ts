@@ -231,6 +231,8 @@ const RPC_AGGREGATES = {
   [WS_METHODS.previewReportProfiles]: "preview",
   [WS_METHODS.previewReportStatus]: "preview",
   [WS_METHODS.subscribePreviewEvents]: "preview",
+  [WS_METHODS.composerReportPrompt]: "composer",
+  [WS_METHODS.subscribeComposerPrompts]: "composer",
   [WS_METHODS.subscribeDiscoveredLocalServers]: "preview",
   [WS_METHODS.previewStopLocalServer]: "preview",
   [WS_METHODS.deviceConfigure]: "device",

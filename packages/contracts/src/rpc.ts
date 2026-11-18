@@ -300,6 +300,11 @@ import {
   TerminalWriteInput,
 } from "./terminal.ts";
 import {
+  ComposerPromptEvent,
+  ComposerReportPromptInput,
+  ComposerReportPromptResult,
+} from "./composerPrompt.ts";
+import {
   DiscoveredLocalServerList,
   ConfiguredLocalServerUrls,
   PreviewCloseInput,
@@ -520,6 +525,8 @@ export const WS_METHODS = {
   previewReportStatus: "preview.reportStatus",
   previewStopLocalServer: "preview.stopLocalServer",
 
+  composerReportPrompt: "composer.reportPrompt",
+
   deviceConfigure: "device.configure",
   deviceList: "device.list",
   deviceTestHost: "device.testHost",
@@ -665,6 +672,7 @@ export const WS_METHODS = {
   worktreeSetupCancel: "worktreeSetup.cancel",
   subscribeTerminalMetadata: "subscribeTerminalMetadata",
   subscribePreviewEvents: "subscribePreviewEvents",
+  subscribeComposerPrompts: "subscribeComposerPrompts",
   subscribeDiscoveredLocalServers: "subscribeDiscoveredLocalServers",
   subscribeDeviceState: "subscribeDeviceState",
   subscribeServerConfig: "subscribeServerConfig",
@@ -1866,6 +1874,19 @@ const WsPreviewReportStatusRpc = Rpc.make(WS_METHODS.previewReportStatus, {
   error: Schema.Union([PreviewError, EnvironmentAuthorizationError]),
 });
 
+const WsComposerReportPromptRpc = Rpc.make(WS_METHODS.composerReportPrompt, {
+  payload: ComposerReportPromptInput,
+  success: ComposerReportPromptResult,
+  error: EnvironmentAuthorizationError,
+});
+
+const WsSubscribeComposerPromptsRpc = Rpc.make(WS_METHODS.subscribeComposerPrompts, {
+  payload: Schema.Struct({}),
+  success: ComposerPromptEvent,
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
 const WsSubscribePreviewEventsRpc = Rpc.make(WS_METHODS.subscribePreviewEvents, {
   payload: Schema.Struct({}),
   success: PreviewEvent,
@@ -2450,6 +2471,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsPreviewReportProfilesRpc,
   WsPreviewReportStatusRpc,
   WsSubscribePreviewEventsRpc,
+  WsComposerReportPromptRpc,
+  WsSubscribeComposerPromptsRpc,
   WsPreviewStopLocalServerRpc,
   WsSubscribeDiscoveredLocalServersRpc,
   WsDeviceConfigureRpc,

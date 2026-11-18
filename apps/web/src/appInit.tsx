@@ -35,6 +35,7 @@ import {
   subscribeDraftThreadPromotion,
   useComposerDraftStore,
 } from "./composerDraftStore";
+import { startComposerPromptSync } from "./composerPromptSync";
 import { startDefaultThemeAdoption } from "./hooks/useDefaultTheme";
 import { startEnvironmentThemeRepaint } from "./hooks/useEnvironmentTheme";
 import { startThemeBackground } from "./themeBackground";
@@ -298,6 +299,7 @@ export function startAppServices(): AppRouter {
     shellStateAtom: environmentShell.stateAtom,
     pendingThreadIdsAtom: threadEnvironment.pendingThreadIdsAtom,
   });
+  startComposerPromptSync();
   startMainAppLocationTracking(router);
   startWorkspaceFocus(router);
   startBackgroundThreadAnnouncements(appAtomRegistry, router);
