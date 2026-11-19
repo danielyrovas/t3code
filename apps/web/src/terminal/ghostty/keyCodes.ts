@@ -239,14 +239,34 @@ export function loadGhosttyKeyboardLayoutMap(): Promise<GhosttyKeyboardLayoutMap
   return promise;
 }
 
-// Browsers omit consumed modifiers; macOS Option composes layout characters too.
+// Browsers omit consumed modifiers; macOS Option composes layout characters unless it acts as Alt.
 export function ghosttyConsumedMods(
   event: Pick<KeyboardEvent, "altKey" | "ctrlKey" | "key" | "metaKey" | "shiftKey">,
   platform = navigator.platform,
+  macosOptionAsAlt = false,
 ): number {
   if (event.ctrlKey || event.metaKey || [...event.key].length !== 1) return 0;
-  if (event.altKey && !isMacPlatform(platform)) return 0;
+  if (event.altKey && (macosOptionAsAlt || !isMacPlatform(platform))) return 0;
   return (event.shiftKey ? 1 : 0) | (event.altKey ? 1 << 2 : 0);
+}
+
+const US_UNSHIFTED_TO_SHIFTED_KEYS = new Map(
+  [...US_SHIFTED_TO_UNSHIFTED_KEYS].map(([shifted, unshifted]) => [unshifted, shifted]),
+);
+
+// The character the key types without Option, so Option+b reaches the PTY as Alt+b, not "∫".
+export function ghosttyOptionAsAltKey(
+  event: Pick<KeyboardEvent, "code" | "shiftKey">,
+  layoutMap?: GhosttyKeyboardLayoutMap,
+): string | null {
+  const base =
+    layoutMap?.get(event.code) ??
+    /^Key([A-Z])$/u.exec(event.code)?.[1]?.toLowerCase() ??
+    /^Digit([0-9])$/u.exec(event.code)?.[1];
+  if (!base || [...base].length !== 1) return null;
+  if (!event.shiftKey) return base;
+  const upper = base.toUpperCase();
+  return upper !== base ? upper : (US_UNSHIFTED_TO_SHIFTED_KEYS.get(base) ?? base);
 }
 
 export function ghosttyUnshiftedCodepoint(

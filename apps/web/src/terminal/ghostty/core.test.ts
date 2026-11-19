@@ -211,6 +211,11 @@ describe("GhosttyTerminalCore snapshots", () => {
 
     expect(core.encodeKey(option)).toBe("@");
     expect(core.encodeKey({ ...option, code: "KeyA", key: "Å", shiftKey: true })).toBe("Å");
+    if (mode === "") {
+      const optionB = { ...option, code: "KeyB", key: "∫" } as KeyboardEvent;
+      expect(core.encodeKey(optionB, "press", true)).toBe("\x1bb");
+      expect(core.encodeKey({ ...optionB, key: "ı", shiftKey: true }, "press", true)).toBe("\x1bB");
+    }
   });
 
   it("preserves styles, wide cells, and selection after shared memory grows", async () => {

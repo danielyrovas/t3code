@@ -1105,7 +1105,9 @@ export class GhosttyTerminalSurface {
   private readonly onKeyDown = (event: KeyboardEvent) => {
     // A consumed repeat still owes the original encoded press a release.
     if (!event.repeat) this.encodedKeyCodes.delete(event.code);
-    if (isTerminalAltGraphText(event) || !this.options.beforeKey(event)) return;
+    // Fork: macOS Option always acts as Alt, so it never types AltGraph text.
+    const altGraphText = !isMacPlatform(navigator.platform) && isTerminalAltGraphText(event);
+    if (altGraphText || !this.options.beforeKey(event)) return;
     // IME candidates belong to the textarea, even if the key also resembles
     // a local shortcut. Safari signals the initial composition with code 229.
     if (isTerminalCompositionKey(event, this.composing)) {
@@ -1207,7 +1209,7 @@ export class GhosttyTerminalSurface {
       return;
     }
     this.clearPrimedCopy();
-    const data = this.core.encodeKey(event);
+    const data = this.core.encodeKey(event, "press", true);
     if (data.length === 0) return;
     this.encodedKeyCodes.add(event.code);
     event.preventDefault();
@@ -1230,7 +1232,7 @@ export class GhosttyTerminalSurface {
       return;
     }
     // Ghostty emits release codes only for Kitty report-event-types sessions.
-    const data = this.core.encodeKey(event, "release");
+    const data = this.core.encodeKey(event, "release", true);
     if (data.length === 0) return;
     event.preventDefault();
     event.stopPropagation();

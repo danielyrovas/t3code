@@ -1,7 +1,10 @@
+import { isMacPlatform } from "@t3tools/shared/keybindings";
+
 import {
   type GhosttyKeyboardLayoutMap,
   ghosttyConsumedMods,
   ghosttyKeyForEvent,
+  ghosttyOptionAsAltKey,
   ghosttyUnshiftedCodepoint,
   loadGhosttyKeyboardLayoutMap,
 } from "./keyCodes";
@@ -574,8 +577,35 @@ export class GhosttyTerminalCore {
     return this.modeEnabled(1);
   }
 
-  encodeKey(event: KeyboardEvent, action: "press" | "release" = "press"): string {
+  encodeKey(
+    sourceEvent: KeyboardEvent,
+    action: "press" | "release" = "press",
+    macosOptionAsAlt = false,
+  ): string {
     this.ensureActive();
+    const optionAsAltKey =
+      macosOptionAsAlt &&
+      sourceEvent.altKey &&
+      !sourceEvent.ctrlKey &&
+      !sourceEvent.metaKey &&
+      isMacPlatform(navigator.platform) &&
+      [...sourceEvent.key].length === 1
+        ? ghosttyOptionAsAltKey(sourceEvent, this.keyboardLayoutMap)
+        : null;
+    const event =
+      optionAsAltKey === null
+        ? sourceEvent
+        : {
+            altKey: true,
+            code: sourceEvent.code,
+            ctrlKey: false,
+            getModifierState: (key: string) => sourceEvent.getModifierState(key),
+            isComposing: sourceEvent.isComposing,
+            key: optionAsAltKey,
+            metaKey: false,
+            repeat: sourceEvent.repeat,
+            shiftKey: sourceEvent.shiftKey,
+          };
     this.runtime.call("ghostty_key_encoder_setopt_from_terminal", this.keyEncoder, this.terminal);
     this.runtime.call(
       "ghostty_key_event_set_action",
@@ -594,7 +624,7 @@ export class GhosttyTerminalCore {
     this.runtime.call(
       "ghostty_key_event_set_consumed_mods",
       this.keyEvent,
-      ghosttyConsumedMods(event),
+      ghosttyConsumedMods(event, navigator.platform, optionAsAltKey !== null),
     );
     this.runtime.call("ghostty_key_event_set_composing", this.keyEvent, event.isComposing ? 1 : 0);
     this.runtime.call(
