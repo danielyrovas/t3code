@@ -56,6 +56,13 @@ const VIEW_OPTIONS = [
   { value: "limits", label: msg("Limits", { $context: "usage view tab, subscription limits" }) },
 ] as const satisfies readonly { value: UsageView; label: string }[];
 
+const PACE_OPTIONS = [
+  // oxlint-disable-next-line t3code/no-untranslated-copy -- fork-specific control
+  { value: "all", label: "All days" },
+  // oxlint-disable-next-line t3code/no-untranslated-copy -- fork-specific control
+  { value: "weekdays", label: "Weekdays" },
+] as const;
+
 const WINDOW_OPTIONS = [
   {
     value: 1,
@@ -116,6 +123,7 @@ function UsageScreen(props: {
     });
   }
   const { view } = selection;
+  const [skipWeekends, setSkipWeekends] = useState(false);
   const setView = (view: UsageView) => setSelection({ params: props.tabParam, view });
   const [measuredWidth, setWidth] = useState(0);
   // A workspace pane knows its width in the render that resizes it; measuring lags a frame.
@@ -242,6 +250,23 @@ function UsageScreen(props: {
       })),
     ],
   };
+  const periodControl = showingLimits ? (
+    <SegmentedControl
+      options={PACE_OPTIONS}
+      selected={skipWeekends ? "weekdays" : "all"}
+      onSelect={(value) => setSkipWeekends(value === "weekdays")}
+      size="compact"
+      className={wide ? "flex-1" : "w-full"}
+    />
+  ) : (
+    <SegmentedControl
+      options={windowOptions}
+      selected={windowDays}
+      onSelect={selectWindow}
+      size="compact"
+      className={wide ? "flex-1" : "w-full"}
+    />
+  );
 
   return (
     <SettingsScreen
@@ -269,17 +294,7 @@ function UsageScreen(props: {
           <View className="w-full gap-6 self-center" style={{ maxWidth: MAX_CONTENT_WIDTH }}>
             {wide ? (
               <View className="flex-row items-center gap-3">
-                {showingLimits ? (
-                  <View className="flex-1" />
-                ) : (
-                  <SegmentedControl
-                    options={windowOptions}
-                    selected={windowDays}
-                    onSelect={selectWindow}
-                    size="compact"
-                    className="flex-1"
-                  />
-                )}
+                {periodControl}
                 <SegmentedControl
                   options={viewOptions}
                   selected={view}
@@ -290,12 +305,15 @@ function UsageScreen(props: {
                 />
               </View>
             ) : (
-              <SegmentedControl
-                options={viewOptions}
-                selected={view}
-                onSelect={setView}
-                role="tab"
-              />
+              <>
+                <SegmentedControl
+                  options={viewOptions}
+                  selected={view}
+                  onSelect={setView}
+                  role="tab"
+                />
+                {periodControl}
+              </>
             )}
             <Animated.View
               key={showingLimits ? "limits" : "usage"}
@@ -307,18 +325,11 @@ function UsageScreen(props: {
                   now={limits.now}
                   failedLabels={limits.failedLabels}
                   selectedEnvironmentIds={selectedEnvironmentIds}
+                  skipWeekends={skipWeekends}
                   wide={wide}
                 />
               ) : (
                 <>
-                  {wide ? null : (
-                    <SegmentedControl
-                      options={windowOptions}
-                      selected={windowDays}
-                      onSelect={selectWindow}
-                      size="compact"
-                    />
-                  )}
                   <ChatGptUsageSummary selectedEnvironmentIds={selectedEnvironmentIds} />
                   {merged.duplicateSources.length > 0 ? (
                     <Text className="text-sm text-foreground-muted">

@@ -174,6 +174,7 @@ function PoolWindowCard({
   pool,
   color,
   now,
+  skipWeekends,
   environmentIds,
   label,
   description,
@@ -182,6 +183,7 @@ function PoolWindowCard({
   readonly pool: LimitPoolWindow;
   readonly color: string;
   readonly now: number;
+  readonly skipWeekends: boolean;
   readonly environmentIds: readonly string[] | null;
   readonly label?: string | null;
   readonly description?: string;
@@ -202,6 +204,7 @@ function PoolWindowCard({
       accountKey: account.key,
       windowId: pool.id,
       windowKind: pool.kind,
+      skipWeekends,
       environmentIds,
     });
   const summary = (
@@ -248,7 +251,7 @@ function PoolWindowCard({
             />
           );
         const { account, window } = member;
-        const timeLeft = paceRemainingPercent(window, now);
+        const timeLeft = paceRemainingPercent(window, now, skipWeekends);
         const credits = account.limits.resetCredits?.availableCount ?? 0;
         const resetsIn = resetLabels(window, now, m)?.compact;
         return (
@@ -470,11 +473,13 @@ export function UsageLimitsSection({
   now,
   failedLabels,
   selectedEnvironmentIds,
+  skipWeekends,
   wide = false,
 }: {
   readonly now: number;
   readonly failedLabels: readonly string[];
   readonly selectedEnvironmentIds: ReadonlySet<EnvironmentId> | null;
+  readonly skipWeekends: boolean;
   readonly wide?: boolean;
 }) {
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
@@ -482,7 +487,7 @@ export function UsageLimitsSection({
     selectedEnvironmentIds === null
       ? presentations
       : new Map([...presentations].filter(([id]) => selectedEnvironmentIds.has(id)));
-  const pools = collectLimitPools(collectLimitAccounts(selected), now);
+  const pools = collectLimitPools(collectLimitAccounts(selected), now, skipWeekends);
   const quotaSources = collectHttpQuotaSources(selected);
   const m = useMessages();
   const notices = collectLimitNotices(selected, m);
@@ -546,6 +551,7 @@ export function UsageLimitsSection({
                     pool={window}
                     color={colors[usageProviderKind(pool.driver) ?? "codex"]}
                     now={now}
+                    skipWeekends={skipWeekends}
                     environmentIds={
                       selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]
                     }
@@ -615,12 +621,13 @@ type AccountScreenProps = StaticScreenProps<{
   windowId: string;
   windowKind: LimitPoolWindow["kind"];
   environmentIds: readonly string[] | null;
+  skipWeekends?: boolean;
 }>;
 
 export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
   const insets = useSafeAreaInsets();
   const presentations = useAtomValue(environmentPresentations.presentationsWithProvidersAtom);
-  const { accountKey, windowId, windowKind, environmentIds } = route.params;
+  const { accountKey, windowId, windowKind, environmentIds, skipWeekends } = route.params;
   const now = useNowMinuteMs();
   const selectedIds =
     environmentIds === null ? null : new Set(environmentIds.map((id) => EnvironmentId.make(id)));
@@ -630,11 +637,11 @@ export function UsageLimitAccountScreen({ route }: AccountScreenProps) {
       : new Map([...presentations].filter(([id]) => selectedIds.has(id)));
   const accounts = collectLimitAccounts(selected);
   const account = accounts.find((candidate) => candidate.key === accountKey);
-  const pool = collectLimitPools(accounts, now)
+  const pool = collectLimitPools(accounts, now, skipWeekends)
     .find((candidate) => candidate.driver === account?.driver)
     ?.windows.find((candidate) => candidate.id === windowId && candidate.kind === windowKind);
   const window = pool?.members.find((member) => member.account.key === accountKey)?.window;
-  const evenPace = window ? paceRemainingPercent(window, now) : null;
+  const evenPace = window ? paceRemainingPercent(window, now, skipWeekends) : null;
   const reset = pool?.resets.find((candidate) => candidate.member.account.key === accountKey);
   const [revealed, setRevealed] = useState(false);
   const gt = useGT();

@@ -29,6 +29,7 @@ export function resolveThreadDetailsLimits(
   providers: readonly ServerProvider[],
   sources: UsageLimitSourceSnapshots,
   now: number,
+  skipWeekends = false,
 ): ThreadDetailsLimits | null {
   const provider = providers.find((entry) => entry.instanceId === providerInstanceId);
   if (!provider) return null;
@@ -42,7 +43,12 @@ export function resolveThreadDetailsLimits(
   const hubs = instanceHubs(provider, sources);
   if (limitsNotice(own) === null || hubs.length === 0) return { kind: "instance", limits: own };
   // An instance sent to a hub reads no limits of its own; its hub pools the accounts it spends.
-  return hubPool(provider.driver, model, providers, hubs, now) ?? { kind: "instance", limits: own };
+  return (
+    hubPool(provider.driver, model, providers, hubs, now, skipWeekends) ?? {
+      kind: "instance",
+      limits: own,
+    }
+  );
 }
 
 export function resolveThreadHttpQuotas(
@@ -78,6 +84,7 @@ function hubPool(
   providers: readonly ServerProvider[],
   sources: UsageLimitSourceSnapshots,
   now: number,
+  skipWeekends: boolean,
 ): ThreadDetailsLimits | null {
   const routes = hubRoutes(sources, driver, model);
   const routed = sources.map((source) => ({
@@ -107,7 +114,7 @@ function hubPool(
       },
     ],
   ]);
-  const pools = collectLimitPools(collectLimitAccounts(presentations), now);
+  const pools = collectLimitPools(collectLimitAccounts(presentations), now, skipWeekends);
   return pools.length > 0 ? { kind: "pool", windows: pools.flatMap(displayLimitWindows) } : null;
 }
 

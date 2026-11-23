@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
+import { subscribeLocalStorageKey } from "../../hooks/useLocalStorage";
 import { readUsagePagePreferences, saveUsagePagePreferences } from "./usagePagePreferences";
 
 const key = "t3code:usage-page-preferences:v1";
@@ -14,7 +15,7 @@ beforeEach(() => {
       values.set(key, value);
     },
   };
-  vi.stubGlobal("window", { localStorage: storage });
+  vi.stubGlobal("window", Object.assign(new EventTarget(), { localStorage: storage }));
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
@@ -24,9 +25,21 @@ afterEach(() => {
 });
 
 describe("Usage page preferences", () => {
-  it("round-trips hidden providers and reads older saves without them", () => {
-    saveUsagePagePreferences({ metric: "cost", windowDays: 7, hiddenProviders: ["codex"] });
-    expect(readUsagePagePreferences().hiddenProviders).toEqual(["codex"]);
+  it("round-trips filters, notifies other views, and reads older saves", () => {
+    const preferences = {
+      metric: "cost",
+      windowDays: 7,
+      hiddenProviders: ["codex"],
+      skipWeekendsForPace: true,
+    } as const;
+    const onChange = vi.fn(() => readUsagePagePreferences());
+    const unsubscribe = subscribeLocalStorageKey(key, onChange);
+    try {
+      saveUsagePagePreferences(preferences);
+      expect(onChange).toHaveReturnedWith(preferences);
+    } finally {
+      unsubscribe();
+    }
 
     values.set(key, '{"metric":"tokens","windowDays":30}');
     expect(readUsagePagePreferences()).toEqual({ metric: "tokens", windowDays: 30 });

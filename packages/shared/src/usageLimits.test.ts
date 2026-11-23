@@ -1,3 +1,4 @@
+// @effect-diagnostics globalDate:off -- Pace fixtures use fixed dates in the viewer's time zone.
 import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
@@ -215,6 +216,57 @@ describe("pace", () => {
     expect(paceOf(window, now)).toBe("under");
     expect(paceOf({ ...window, usedPercent: 62 }, now)).toBe("on");
     expect(paceOf({ ...window, usedPercent: 80 }, now)).toBe("ahead");
+  });
+
+  it("holds weekday pace steady from Saturday through Monday morning", () => {
+    const start = new Date(2026, 8, 3, 12).getTime();
+    const weekly = {
+      ...window,
+      kind: "weekly" as const,
+      windowDurationMins: 7 * 24 * 60,
+      resetsAt: new Date(start + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      usedPercent: 30,
+    };
+    for (const date of [new Date(2026, 8, 5), new Date(2026, 8, 6), new Date(2026, 8, 7)]) {
+      expect(paceRemainingPercent(weekly, date.getTime(), true)).toBe(70);
+      expect(paceOf(weekly, date.getTime(), true)).toBe("on");
+    }
+    const halfway = start + (weekly.windowDurationMins * 60_000) / 2;
+    expect(paceRemainingPercent(weekly, halfway)).toBe(50);
+
+    const accounts = collectLimitAccounts(
+      new Map([
+        [
+          EnvironmentId.make("env-a"),
+          {
+            entry: { target: { label: "Laptop" } },
+            serverConfig: {
+              providers: [
+                provider({
+                  usageLimits: { checkedAt: new Date(start).toISOString(), windows: [weekly] },
+                }),
+              ],
+            },
+          },
+        ],
+      ]),
+    );
+    expect(collectLimitPools(accounts, halfway, true)[0]?.windows[0]).toMatchObject({
+      pace: "on",
+      remainingPercent: 70,
+    });
+    expect(collectLimitPools(accounts, halfway)[0]?.windows[0]).toMatchObject({
+      pace: "under",
+      remainingPercent: 70,
+    });
+  });
+
+  it("omits weekday pace when the entire window falls on a weekend", () => {
+    const saturday = {
+      ...window,
+      resetsAt: new Date(2026, 8, 5, 17).toISOString(),
+    };
+    expect(paceRemainingPercent(saturday, new Date(2026, 8, 5, 15).getTime(), true)).toBeNull();
   });
 });
 

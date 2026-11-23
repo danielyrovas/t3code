@@ -116,6 +116,13 @@ function isUsageWindowDays(value: number): value is UsagePagePreferences["window
   return WINDOW_OPTIONS.some((option) => option.days === value);
 }
 
+const PACE_OPTIONS = [
+  // oxlint-disable-next-line t3code/no-untranslated-copy -- fork-specific control
+  { value: "all", label: "All days" },
+  // oxlint-disable-next-line t3code/no-untranslated-copy -- fork-specific control
+  { value: "weekdays", label: "Weekdays" },
+] as const;
+
 const providerLabel = (provider: UsageProviderKind) => PROVIDER_PRESENTATION[provider].label;
 
 function usageLoading(
@@ -177,6 +184,7 @@ function UsageModelDialogHost({
 
 export function UsagePage() {
   const [preferences, setPreferences] = useState(readUsagePagePreferences);
+  const skipWeekends = preferences.skipWeekendsForPace ?? false;
   const keybindings = useAtomValue(primaryServerKeybindingsAtom);
   const hour12 = usePrimarySettings((settings) => resolveHour12(settings.timestampFormat));
   const gt = useGT();
@@ -375,7 +383,24 @@ export function UsagePage() {
           start: formatDayShort(shownWindow.sinceDay, locale),
           end: formatDayShort(shownWindow.untilDay, locale),
         });
-  const windowOptionLabel = WINDOW_OPTIONS.find((option) => option.days === windowDays)?.label;
+  const periodOptions: readonly { value: string; label: string; title?: string }[] = showingLimits
+    ? PACE_OPTIONS
+    : WINDOW_OPTIONS.map((option) => ({
+        value: String(option.days),
+        label: m(option.label),
+        title: shortcutTitle(option),
+      }));
+  const periodValue = showingLimits ? (skipWeekends ? "weekdays" : "all") : String(windowDays);
+  const periodLabel = showingLimits ? gt("Even pace") : gt("Usage period");
+  const selectPeriod = (value: string | null | undefined) => {
+    if (showingLimits) {
+      if (value === "all" || value === "weekdays") {
+        updatePreferences({ skipWeekendsForPace: value === "weekdays" });
+      }
+    } else {
+      selectWindow(Number(value));
+    }
+  };
   const metricOptionLabel = METRIC_OPTIONS.find((option) => option.value === metric)?.label;
   const topbarContent = (
     <div className="grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 py-2 @4xl/usage-header:flex">
@@ -414,25 +439,18 @@ export function UsagePage() {
         </span>
       ) : null}
       <div className="ms-auto hidden shrink-0 items-center justify-end gap-2 @4xl/usage-header:flex">
-        {/* Limits are always current, so they have no period. The period sits before the metric
-            tabs so dropping it never moves them. */}
-        {showingLimits ? null : (
-          <ToggleGroup
-            aria-label={gt("Usage period")}
-            variant="segmented"
-            value={[String(windowDays)]}
-            onValueChange={(next) => {
-              const value = next[0];
-              if (value) selectWindow(Number(value));
-            }}
-          >
-            {WINDOW_OPTIONS.map((option) => (
-              <Toggle key={option.days} value={String(option.days)} title={shortcutTitle(option)}>
-                {m(option.label)}
-              </Toggle>
-            ))}
-          </ToggleGroup>
-        )}
+        <ToggleGroup
+          aria-label={periodLabel}
+          variant="segmented"
+          value={[periodValue]}
+          onValueChange={(next) => selectPeriod(next[0])}
+        >
+          {periodOptions.map((option) => (
+            <Toggle key={option.value} value={option.value} title={option.title}>
+              {option.label}
+            </Toggle>
+          ))}
+        </ToggleGroup>
         <ToggleGroup
           aria-label={gt("Usage metric")}
           variant="segmented"
@@ -460,29 +478,25 @@ export function UsagePage() {
         </Button>
       </div>
       <div className="ms-auto flex shrink-0 items-center justify-end gap-1 @4xl/usage-header:hidden">
-        {showingLimits ? null : (
-          <Select value={String(windowDays)} onValueChange={(value) => selectWindow(Number(value))}>
-            <SelectTrigger
-              aria-label={gt("Usage period")}
-              size="compact"
-              variant="ghost"
-              className="w-auto min-w-0"
-            >
-              <SelectValue>{windowOptionLabel && m(windowOptionLabel)}</SelectValue>
-            </SelectTrigger>
-            <SelectPopup align="end" alignItemWithTrigger={false}>
-              {WINDOW_OPTIONS.map((option) => (
-                <SelectItem
-                  key={option.days}
-                  value={String(option.days)}
-                  title={shortcutTitle(option)}
-                >
-                  {m(option.label)}
-                </SelectItem>
-              ))}
-            </SelectPopup>
-          </Select>
-        )}
+        <Select value={periodValue} onValueChange={selectPeriod}>
+          <SelectTrigger
+            aria-label={periodLabel}
+            size="compact"
+            variant="ghost"
+            className="w-auto min-w-0"
+          >
+            <SelectValue>
+              {periodOptions.find((option) => option.value === periodValue)?.label}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectPopup align="end" alignItemWithTrigger={false}>
+            {periodOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value} title={option.title}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectPopup>
+        </Select>
         <Select
           value={metric}
           onValueChange={(value) => {
@@ -544,6 +558,7 @@ export function UsagePage() {
                 selectedEnvironmentIds={selectedEnvironmentIds}
                 hiddenProviders={hiddenProviders}
                 now={limitsNow}
+                skipWeekends={skipWeekends}
               />
             ) : shown === null ? (
               <UsageSkeleton />

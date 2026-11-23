@@ -139,6 +139,7 @@ function SegmentPopover({
   window,
   reset,
   now,
+  skipWeekends,
   redeem,
   onRedeem,
 }: {
@@ -146,6 +147,7 @@ function SegmentPopover({
   readonly window: LimitPoolMember["window"];
   readonly reset: LimitPoolWindow["resets"][number] | undefined;
   readonly now: number;
+  readonly skipWeekends: boolean;
   readonly redeem: ReturnType<typeof useResetCredit> | null;
   readonly onRedeem: (choice: ResetCreditChoice) => void;
 }) {
@@ -153,7 +155,7 @@ function SegmentPopover({
   const gt = useGT();
   const m = useMessages();
   const remaining = remainingPercent(window);
-  const timeLeft = paceRemainingPercent(window, now);
+  const timeLeft = paceRemainingPercent(window, now, skipWeekends);
   const resetsIn = formatResetsIn(window, now, m, "in");
   const where =
     account.environments.length > 0
@@ -244,7 +246,10 @@ function SegmentPopover({
  * segment moves it instead of opening a second one. The payload is the segment
  * it currently describes.
  */
-type SegmentPayload = Omit<Parameters<typeof SegmentPopover>[0], "now" | "onRedeem">;
+type SegmentPayload = Omit<
+  Parameters<typeof SegmentPopover>[0],
+  "now" | "onRedeem" | "skipWeekends"
+>;
 const SegmentPopoverContext = createContext<ReturnType<
   typeof PopoverCreateHandle<SegmentPayload>
 > | null>(null);
@@ -255,12 +260,14 @@ function ActiveSegmentPopover({
   payload,
   pools,
   now,
+  skipWeekends,
 }: {
   readonly handle: ReturnType<typeof PopoverCreateHandle<SegmentPayload>>;
   readonly actions: RefObject<PopoverPrimitive.Root.Actions | null>;
   readonly payload: SegmentPayload;
   readonly pools: readonly LimitPool[];
   readonly now: number;
+  readonly skipWeekends: boolean;
 }) {
   const available = pools.some((pool) =>
     displayLimitWindows(pool).some((window) =>
@@ -287,6 +294,7 @@ function ActiveSegmentPopover({
       <SegmentPopover
         {...payload}
         now={now}
+        skipWeekends={skipWeekends}
         onRedeem={(choice) => {
           handle.close();
           payload.redeem?.confirm(choice);
@@ -300,19 +308,7 @@ function ActiveSegmentPopover({
  * The confirm is a sibling of the popover, not a child: dialogs stack under
  * popovers, and the popover closes as the confirm opens.
  */
-function PoolSegment({
-  account,
-  ...props
-}: {
-  readonly account: LimitAccount;
-  readonly window: LimitPoolMember["window"];
-  readonly reset: LimitPoolWindow["resets"][number] | undefined;
-  readonly refillPercent: number;
-  readonly color: string;
-  readonly now: number;
-  readonly index: number;
-  readonly showAccountName: boolean;
-}) {
+function PoolSegment({ account, ...props }: Omit<Parameters<typeof SegmentTriggers>[0], "redeem">) {
   return account.redeem ? (
     <RedeemableSegment account={account} redeemAt={account.redeem} {...props} />
   ) : (
@@ -357,19 +353,21 @@ function SegmentTriggers({
   refillPercent,
   color,
   now,
+  skipWeekends,
   index,
   showAccountName,
 }: SegmentPayload & {
   readonly refillPercent: number;
   readonly color: string;
   readonly now: number;
+  readonly skipWeekends: boolean;
   readonly index: number;
   readonly showAccountName: boolean;
 }) {
   const popover = use(SegmentPopoverContext) ?? undefined;
   const payload: SegmentPayload = { account, window, reset, redeem };
   const remaining = remainingPercent(window);
-  const timeLeft = paceRemainingPercent(window, now);
+  const timeLeft = paceRemainingPercent(window, now, skipWeekends);
   const [segmentRef, paceMark] = usePaceMark(timeLeft);
   const m = useMessages();
   const resetsIn = formatResetsIn(window, now, m);
@@ -548,10 +546,12 @@ function PoolBar({
   pool,
   color,
   now,
+  skipWeekends,
 }: {
   readonly pool: LimitPoolWindow;
   readonly color: string;
   readonly now: number;
+  readonly skipWeekends: boolean;
 }) {
   const restores = new Map(pool.resets.map((reset) => [reset.member.account.key, reset]));
   const gt = useGT();
@@ -571,6 +571,7 @@ function PoolBar({
               refillPercent={member.refillPercent}
               color={normalizeProviderAccentColor(member.account.accentColor) ?? color}
               now={now}
+              skipWeekends={skipWeekends}
               index={position + 1}
               showAccountName={pool.columns.length > 1}
             />
@@ -597,12 +598,14 @@ function PoolWindowCard({
   pool,
   color,
   now,
+  skipWeekends,
   label,
   description,
 }: {
   readonly pool: LimitPoolWindow;
   readonly color: string;
   readonly now: number;
+  readonly skipWeekends: boolean;
   readonly label?: string | null | undefined;
   readonly description?: string | undefined;
 }) {
@@ -636,7 +639,7 @@ function PoolWindowCard({
           </span>
         ) : null}
       </div>
-      <PoolBar pool={pool} color={color} now={now} />
+      <PoolBar pool={pool} color={color} now={now} skipWeekends={skipWeekends} />
       {description ? (
         <p className="text-xs text-muted-foreground md:col-span-2">{description}</p>
       ) : null}
@@ -644,7 +647,15 @@ function PoolWindowCard({
   );
 }
 
-function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: number }) {
+function PoolSection({
+  pool,
+  now,
+  skipWeekends,
+}: {
+  readonly pool: LimitPool;
+  readonly now: number;
+  readonly skipWeekends: boolean;
+}) {
   const color = barColor(pool.driver);
   const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
   const windows = displayLimitWindows(pool);
@@ -670,6 +681,7 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
             pool={window}
             color={color}
             now={now}
+            skipWeekends={skipWeekends}
             label={details?.label}
             description={details?.description}
           />
@@ -682,15 +694,17 @@ function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: nu
 export function UsageLimitsPooled({
   presentations,
   now,
+  skipWeekends = false,
 }: {
   readonly presentations: Parameters<typeof collectLimitAccounts>[0];
   readonly now: number;
+  readonly skipWeekends?: boolean;
 }) {
   const gt = useGT();
   const m = useMessages();
   const [segmentPopover] = useState(() => PopoverCreateHandle<SegmentPayload>());
   const segmentPopoverActions = useRef<PopoverPrimitive.Root.Actions | null>(null);
-  const pools = collectLimitPools(collectLimitAccounts(presentations), now);
+  const pools = collectLimitPools(collectLimitAccounts(presentations), now, skipWeekends);
   const quotaSources = collectHttpQuotaSources(presentations);
   const notices = collectLimitNotices(presentations, m);
   const externalLinks = collectExternalUsageLinks(presentations, m);
@@ -707,7 +721,7 @@ export function UsageLimitsPooled({
       <SegmentPopoverContext value={segmentPopover}>
         {pools.map((pool) => (
           <Fragment key={pool.driver}>
-            <PoolSection pool={pool} now={now} />
+            <PoolSection pool={pool} now={now} skipWeekends={skipWeekends} />
           </Fragment>
         ))}
       </SegmentPopoverContext>
@@ -720,6 +734,7 @@ export function UsageLimitsPooled({
               payload={payload}
               pools={pools}
               now={now}
+              skipWeekends={skipWeekends}
             />
           ) : null
         }

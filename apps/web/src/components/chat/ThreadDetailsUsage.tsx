@@ -24,6 +24,7 @@ import { formatContextWindowTokens } from "../../lib/contextWindow";
 import { cn } from "../../lib/utils";
 import { formatUpcomingTimestamp } from "../../timestampFormat";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { useSkipWeekendsForPace } from "../usage/usagePagePreferences";
 import { formatContextWindowCompactionMessage } from "./compaction.logic";
 import { ThreadDetailsSection } from "./ThreadDetailsSection";
 import {
@@ -63,9 +64,17 @@ export function ThreadDetailsUsage({
   sources,
 }: Omit<ThreadDetailsUsageInput, "contextWindow">) {
   const gt = useGT();
+  const skipWeekends = useSkipWeekendsForPace();
   const nowMinute = useNowMinute();
   const now = Date.parse(`${nowMinute}:00Z`);
-  const resolved = resolveThreadDetailsLimits(providerInstanceId, model, providers, sources, now);
+  const resolved = resolveThreadDetailsLimits(
+    providerInstanceId,
+    model,
+    providers,
+    sources,
+    now,
+    skipWeekends,
+  );
   const quotas = resolveThreadHttpQuotas(providerInstanceId, sources);
   if (!resolved && quotas.length === 0) return null;
 
@@ -80,10 +89,16 @@ export function ThreadDetailsUsage({
           ? resolved.windows.map((window) => <PoolRow key={window.id} window={window} now={now} />)
           : resolved &&
             (quotas.length === 0 || limitsNotice(resolved.limits) === null) && (
-              <InstanceRows limits={resolved.limits} now={now} />
+              <InstanceRows limits={resolved.limits} now={now} skipWeekends={skipWeekends} />
             )}
         {quotas.map(({ key, accountLabel, window }) => (
-          <LimitRow key={key} window={window} now={now} accountLabel={accountLabel} />
+          <LimitRow
+            key={key}
+            window={window}
+            now={now}
+            accountLabel={accountLabel}
+            skipWeekends={skipWeekends}
+          />
         ))}
       </div>
     </ThreadDetailsSection>
@@ -93,9 +108,11 @@ export function ThreadDetailsUsage({
 function InstanceRows({
   limits,
   now,
+  skipWeekends,
 }: {
   readonly limits: ServerProviderUsageLimits;
   readonly now: number;
+  readonly skipWeekends: boolean;
 }) {
   const gt = useGT();
   const m = useMessages();
@@ -112,7 +129,9 @@ function InstanceRows({
       />
     );
   }
-  return limits.windows.map((window) => <LimitRow key={window.id} window={window} now={now} />);
+  return limits.windows.map((window) => (
+    <LimitRow key={window.id} window={window} now={now} skipWeekends={skipWeekends} />
+  ));
 }
 
 /** The thread's context window. The bar fills as context is used; the tick marks auto-compaction. */
@@ -186,17 +205,19 @@ function LimitRow({
   window,
   now,
   accountLabel,
+  skipWeekends,
 }: {
   readonly window: ServerProviderUsageWindow;
   readonly now: number;
   readonly accountLabel?: string;
+  readonly skipWeekends: boolean;
 }) {
   const gt = useGT();
   const m = useMessages();
   const timestampFormat = usePrimarySettings((settings) => settings.timestampFormat);
   const left = remainingPercent(window);
-  const pace = paceOf(window, now);
-  const timeLeft = paceRemainingPercent(window, now);
+  const pace = paceOf(window, now, skipWeekends);
+  const timeLeft = paceRemainingPercent(window, now, skipWeekends);
   const resetsAt = window.resetsAt ? Date.parse(window.resetsAt) : Number.NaN;
   return (
     <UsageRow

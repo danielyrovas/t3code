@@ -561,6 +561,7 @@ const WINDOW_KIND_ORDER: Record<ServerProviderUsageWindow["kind"], number> = {
 export function collectLimitPools(
   accounts: readonly LimitAccount[],
   now: number,
+  skipWeekends = false,
 ): readonly LimitPool[] {
   const byDriver = new Map<ServerProvider["driver"], LimitAccount[]>();
   for (const account of accounts) {
@@ -587,7 +588,7 @@ export function collectLimitPools(
         accountSortName(left).localeCompare(accountSortName(right)) ||
         left.key.localeCompare(right.key),
     );
-    return { driver, accounts: sorted, windows: poolWindows(sorted, now) };
+    return { driver, accounts: sorted, windows: poolWindows(sorted, now, skipWeekends) };
   });
 }
 
@@ -675,7 +676,11 @@ function compensatedSum(values: readonly number[]): number {
   return sum + correction;
 }
 
-function poolWindows(accounts: readonly LimitAccount[], now: number): readonly LimitPoolWindow[] {
+function poolWindows(
+  accounts: readonly LimitAccount[],
+  now: number,
+  skipWeekends: boolean,
+): readonly LimitPoolWindow[] {
   const byKey = new Map<string, LimitPoolMember[]>();
   for (const account of accounts) {
     for (const reported of account.limits.windows) {
@@ -708,7 +713,7 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
       ) / totalWeight;
     // Judge pace only for windows with reset clocks; others add spend without elapsed time.
     const timed = members.flatMap((m) => {
-      const share = elapsedShare(m.window, now);
+      const share = elapsedShare(m.window, now, skipWeekends);
       return share === null
         ? []
         : [{ used: m.window.usedPercent, elapsed: share, weight: weightOf.get(m)! }];
@@ -772,27 +777,54 @@ function resetMillis(window: ServerProviderUsageWindow): number | null {
   return Number.isFinite(at) ? at : null;
 }
 
-export function elapsedShare(window: ServerProviderUsageWindow, now: number): number | null {
+export function elapsedShare(
+  window: ServerProviderUsageWindow,
+  now: number,
+  skipWeekends = false,
+): number | null {
   const resetsAt = resetMillis(window);
   if (resetsAt === null || window.windowDurationMins === undefined) return null;
   const length = window.windowDurationMins * MINUTE;
   if (length <= 0) return null;
-  return Math.max(0, Math.min(1, (length - (resetsAt - now)) / length));
+  const startsAt = resetsAt - length;
+  if (!skipWeekends) return Math.max(0, Math.min(1, (now - startsAt) / length));
+
+  let elapsed = 0;
+  let total = 0;
+  // @effect-diagnostics-next-line globalDate:off -- Weekends follow the viewer's local calendar.
+  const day = new Date(startsAt);
+  for (let from = startsAt; from < resetsAt;) {
+    const weekday = day.getDay();
+    day.setDate(day.getDate() + 1);
+    const to = Math.min(day.setHours(0, 0, 0, 0), resetsAt);
+    if (!(to > from)) return null;
+    if (weekday !== 0 && weekday !== 6) {
+      total += to - from;
+      elapsed += Math.max(0, Math.min(now, to) - from);
+    }
+    from = to;
+  }
+  return total === 0 ? null : elapsed / total;
 }
 
 // Bars show quota remaining, so even pace tracks time remaining.
 export function paceRemainingPercent(
   window: ServerProviderUsageWindow,
   now: number,
+  skipWeekends = false,
 ): number | null {
-  const elapsed = elapsedShare(window, now);
+  const elapsed = elapsedShare(window, now, skipWeekends);
   return elapsed === null ? null : Math.round((1 - elapsed) * 100);
 }
 
 export type LimitPace = "ahead" | "on" | "under";
 
-export function paceOf(window: ServerProviderUsageWindow, now: number): LimitPace | null {
-  const elapsed = elapsedShare(window, now);
+export function paceOf(
+  window: ServerProviderUsageWindow,
+  now: number,
+  skipWeekends = false,
+): LimitPace | null {
+  const elapsed = elapsedShare(window, now, skipWeekends);
   return elapsed === null ? null : paceOfShares(window.usedPercent, elapsed);
 }
 

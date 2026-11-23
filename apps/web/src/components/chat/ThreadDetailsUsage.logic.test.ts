@@ -6,6 +6,7 @@ import {
   type UsageLimitSourceSnapshot,
   UsageLimitSourceId,
 } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -146,6 +147,37 @@ describe("resolveThreadDetailsLimits", () => {
     expect(shown(unsupported, sources, "gpt-5.6-sol[1m]")).toEqual({
       kind: "pool",
       rows: [{ label: "Session", left: 70, accounts: 1, from: { hubs: ["Hub"], signedIn: false } }],
+    });
+  });
+
+  it("uses weekday pace for accounts pooled by the hub", () => {
+    const windowDurationMins = 7 * 24 * 60;
+    const resetsAt = Date.parse("2026-11-05T00:00:00");
+    const monday = Date.parse("2026-11-02T12:00:00");
+    const limits = {
+      checkedAt,
+      windows: [
+        {
+          id: "seven_day",
+          label: "Weekly",
+          kind: "weekly" as const,
+          usedPercent: 50,
+          windowDurationMins,
+          resetsAt: DateTime.formatIso(DateTime.makeUnsafe(resetsAt)),
+        },
+      ],
+    };
+    const providers = [claudeInstance(unsupported)];
+    const sources = [hub("Hub", [{ id: "a.json", limits }])];
+    const calendar = resolveThreadDetailsLimits(instanceId, null, providers, sources, monday);
+    const weekdays = resolveThreadDetailsLimits(instanceId, null, providers, sources, monday, true);
+    expect(calendar).toMatchObject({
+      kind: "pool",
+      windows: [{ remainingPercent: 50, pace: "under" }],
+    });
+    expect(weekdays).toMatchObject({
+      kind: "pool",
+      windows: [{ remainingPercent: 50, pace: "on" }],
     });
   });
 });
